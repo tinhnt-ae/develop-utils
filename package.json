@@ -1,6 +1,6 @@
 {
   "name": "develop-utils",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "description": "Repository setup utilities for license files and semantic-release.",
   "license": "MIT",
   "type": "module",
