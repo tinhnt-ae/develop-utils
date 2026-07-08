@@ -5,19 +5,21 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "develop-utils": "./bin/develop-utils.js",
-    "add-licenses": "./bin/add-licenses.js",
-    "add-semantic-release": "./bin/add-semantic-release.js"
+    "devu": "./dist/cli/develop-utils.js",
+    "develop-utils": "./dist/cli/develop-utils.js",
+    "add-licenses": "./dist/cli/add-licenses.js",
+    "add-semantic-release": "./dist/cli/add-semantic-release.js"
   },
   "files": [
-    "bin/",
-    "lib/",
+    "dist/",
     "FEATURE.md",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test",
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test .test-dist/*.test.js",
+    "prepack": "npm run build",
     "pack:dry-run": "npm pack --dry-run",
     "release": "semantic-release"
   },
@@ -28,10 +30,21 @@
     "access": "public"
   },
   "keywords": [
+    "devu",
     "license",
     "semantic-release",
     "repository",
     "setup",
     "git"
-  ]
+  ],
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^12.0.9",
+    "@semantic-release/release-notes-generator": "^14.1.1",
+    "@types/node": "^20.19.4",
+    "semantic-release": "^25.0.5",
+    "typescript": "^5.8.3"
+  }
 }

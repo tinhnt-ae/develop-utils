@@ -1,31 +1,6 @@
-import { writeFile } from "node:fs/promises";
-import path from "node:path";
-import {
-  formatDate,
-  getFirstCommitDate,
-  getGitMetadata,
-  isGitRepository,
-  parseCommonArgs,
-  today,
-} from "./common.js";
+import type { LicenseTemplateValues } from "./types.js";
 
-export function help() {
-  return `Usage: develop-utils add-licenses [project-dir] [--project-name name] [--dry-run]
-
-Creates LICENSE, COPYRIGHT.md, AUTHORSHIP.md, and .gitattributes.
-
-Metadata defaults come from git config:
-  git config user.name
-  git config user.email
-  git remote get-url origin
-
-Environment overrides:
-  DEVELOP_UTILS_FULL_NAME
-  DEVELOP_UTILS_EMAIL
-  DEVELOP_UTILS_GITHUB_USERNAME`;
-}
-
-function licenseText(values) {
+export function licenseText(values: LicenseTemplateValues): string {
   return `Copyright (c) ${values.yearRange} ${values.fullName}. All rights reserved.
 
 PROPRIETARY AND CONFIDENTIAL
@@ -74,7 +49,7 @@ Last updated: ${values.todayDate}
 `;
 }
 
-function copyrightText(values) {
+export function copyrightText(values: LicenseTemplateValues): string {
   return `# Copyright Notice
 
 ## Ownership
@@ -117,7 +92,7 @@ For licensing inquiries or permissions: ${values.email}
 `;
 }
 
-function authorshipText(values) {
+export function authorshipText(values: LicenseTemplateValues): string {
   return `# Authorship Declaration
 
 ## Sole Author
@@ -169,7 +144,7 @@ ${values.todayDate}
 `;
 }
 
-function gitattributesText() {
+export function gitattributesText(): string {
   return `# Protect license files from modification
 LICENSE merge=ours
 COPYRIGHT.md merge=ours
@@ -184,75 +159,3 @@ AUTHORSHIP.md merge=ours
 `;
 }
 
-async function writeOrPreview(projectDir, dryRun, fileName, content) {
-  const target = path.join(projectDir, fileName);
-
-  if (dryRun) {
-    console.log(`DRY RUN write: ${target}`);
-    return;
-  }
-
-  await writeFile(target, content);
-}
-
-export async function runAddLicenses(argv = process.argv.slice(2)) {
-  const options = parseCommonArgs(argv);
-
-  if (options.help) {
-    console.log(help());
-    return;
-  }
-
-  if (!isGitRepository(options.projectDir)) {
-    throw new Error(`Not a git repository or worktree: ${options.projectDir}`);
-  }
-
-  const git = getGitMetadata(options.projectDir);
-  const now = today();
-  const firstCommit = getFirstCommitDate(options.projectDir) || now;
-  const currentYear = String(now.getFullYear());
-  const startYear = String(firstCommit.getFullYear());
-  const fullName = process.env.DEVELOP_UTILS_FULL_NAME || git.name;
-  const email = process.env.DEVELOP_UTILS_EMAIL || git.email;
-  const githubUsername = process.env.DEVELOP_UTILS_GITHUB_USERNAME || git.githubUsername || "[To be determined]";
-
-  if (!fullName) {
-    throw new Error("Could not determine owner name. Set git config user.name or DEVELOP_UTILS_FULL_NAME.");
-  }
-  if (!email) {
-    throw new Error("Could not determine owner email. Set git config user.email or DEVELOP_UTILS_EMAIL.");
-  }
-
-  const values = {
-    projectName: options.projectName,
-    fullName,
-    email,
-    gitName: git.name || fullName,
-    gitEmail: git.email || email,
-    githubUsername,
-    repoUrl: git.remoteUrl || "[To be determined]",
-    todayDate: formatDate(now),
-    startDate: formatDate(firstCommit),
-    firstCommitDate: formatDate(firstCommit),
-    yearRange: startYear === currentYear ? currentYear : `${startYear}-${currentYear}`,
-  };
-
-  console.log(`Project directory: ${options.projectDir}`);
-  console.log(`Project name: ${values.projectName}`);
-  console.log(`Owner: ${values.fullName} <${values.email}>`);
-  console.log(`Repository: ${values.repoUrl}`);
-
-  await writeOrPreview(options.projectDir, options.dryRun, "LICENSE", licenseText(values));
-  await writeOrPreview(options.projectDir, options.dryRun, "COPYRIGHT.md", copyrightText(values));
-  await writeOrPreview(options.projectDir, options.dryRun, "AUTHORSHIP.md", authorshipText(values));
-  await writeOrPreview(options.projectDir, options.dryRun, ".gitattributes", gitattributesText());
-
-  console.log("");
-  console.log(`License files ${options.dryRun ? "planned" : "created"} for: ${values.projectName}`);
-  console.log("");
-  console.log("Files:");
-  console.log("  - LICENSE");
-  console.log("  - COPYRIGHT.md");
-  console.log("  - AUTHORSHIP.md");
-  console.log("  - .gitattributes");
-}

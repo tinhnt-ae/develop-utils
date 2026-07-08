@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 
-import { runAddLicenses, help as licensesHelp } from "../lib/add-licenses.js";
-import { runAddSemanticRelease, help as semanticReleaseHelp } from "../lib/add-semantic-release.js";
+import { help as licensesHelp, runAddLicenses } from "../commands/add-licenses/command.js";
+import { help as semanticReleaseHelp, runAddSemanticRelease } from "../commands/add-semantic-release/command.js";
+import { closePrompts } from "../shared/prompts.js";
 
-function mainHelp() {
-  return `Usage: develop-utils <command> [options]
+function mainHelp(): string {
+  return `Usage: devu <command> [options]
 
 Commands:
   add-licenses          Create license/authorship files from git metadata.
   add-semantic-release  Add semantic-release setup to a repository.
 
-Run "develop-utils <command> --help" for command-specific options.`;
+Run "devu <command> --help" for command-specific options.
+
+develop-utils remains available as a long-form alias.`;
 }
 
-async function main() {
+async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
 
   if (!command || command === "-h" || command === "--help") {
@@ -44,7 +47,11 @@ async function main() {
   throw new Error(`Unknown command: ${command}`);
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+main()
+  .catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    closePrompts();
+  });

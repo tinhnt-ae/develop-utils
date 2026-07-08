@@ -15,20 +15,21 @@ npm install -g develop-utils
 Or run without installing:
 
 ```bash
-npx develop-utils add-licenses
-npx develop-utils add-semantic-release
+npx --package develop-utils devu add-licenses
+npx --package develop-utils devu add-semantic-release
 ```
 
 ## Commands
 
 ```bash
-develop-utils add-licenses [project-dir] [--project-name name] [--dry-run]
-develop-utils add-semantic-release [project-dir] [--mode auto|ci-npx|local-node] [--dry-run]
+devu add-licenses [project-dir] [--project-name name] [--dry-run]
+devu add-semantic-release [project-dir] [--mode auto|ci-npx|local-node] [--dry-run]
 ```
 
-Standalone bins are also available:
+Long-form and standalone bins are also available:
 
 ```bash
+develop-utils
 add-licenses
 add-semantic-release
 ```
@@ -51,6 +52,10 @@ DEVELOP_UTILS_EMAIL="you@example.com"
 DEVELOP_UTILS_GITHUB_USERNAME="your-github-user"
 ```
 
+`add-licenses` asks before creating `COPYRIGHT.md`, `AUTHORSHIP.md`, and
+`.gitattributes`. If `LICENSE` already exists, it asks before overwriting it.
+Type `y` or `n` and press Enter for each question.
+
 ## Semantic Release Modes
 
 `add-semantic-release` defaults to `--mode auto`.
@@ -60,6 +65,11 @@ DEVELOP_UTILS_GITHUB_USERNAME="your-github-user"
 - `ci-npx`: language-agnostic; generates release config and CI workflow without creating `package.json`.
 
 Use `ci-npx` for Kotlin, Java, Python, Rust, Go, docs, or any repo where release automation should not add Node project files.
+
+Before writing release config or workflow files, `add-semantic-release` asks for
+approval. In `local-node` mode it also asks before creating/updating
+`package.json` and before installing semantic-release dependencies. Type `y` or
+`n` and press Enter for each question.
 
 ## Why
 
