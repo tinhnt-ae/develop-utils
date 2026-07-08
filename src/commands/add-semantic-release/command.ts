@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -20,6 +21,19 @@ const baseDeps = [
   "@semantic-release/changelog",
   "@semantic-release/git",
 ];
+
+interface PackageJson {
+  name?: unknown;
+  repository?: unknown;
+}
+
+interface NpmPackageInfo {
+  name?: string;
+  version?: string;
+  repository?: {
+    url?: string;
+  } | string;
+}
 
 export function help(): string {
   return `Usage: devu add-semantic-release [project-dir] [--mode auto|ci-npx|local-node] [--dry-run]
@@ -58,6 +72,103 @@ function resolveMode(mode: SemanticReleaseMode, hasPackageJson: boolean): Resolv
 
 function shouldAskAboutNpmPublishing(mode: ResolvedSemanticReleaseMode, hasPackageJson: boolean): boolean {
   return hasPackageJson || mode === "local-node";
+}
+
+function repositoryUrlFromPackage(pkg: PackageJson): string | undefined {
+  if (typeof pkg.repository === "string") {
+    return pkg.repository;
+  }
+
+  if (pkg.repository && typeof pkg.repository === "object" && "url" in pkg.repository) {
+    const url = (pkg.repository as { url?: unknown }).url;
+    return typeof url === "string" ? url : undefined;
+  }
+
+  return undefined;
+}
+
+function normalizePackageUrl(url: string): string {
+  return url
+    .replace(/^git\+/, "")
+    .replace(/^git@github\.com:/, "https://github.com/")
+    .replace(/^https?:\/\/github\.com\//, "github.com/")
+    .replace(/\.git$/, "")
+    .replace(/\/$/, "")
+    .toLowerCase();
+}
+
+async function readPackageJson(projectDir: string): Promise<PackageJson | undefined> {
+  const target = path.join(projectDir, "package.json");
+
+  if (!existsSync(target)) {
+    return undefined;
+  }
+
+  return JSON.parse(await readFile(target, "utf8")) as PackageJson;
+}
+
+function npmPackageExists(packageName: string): NpmPackageInfo | false | undefined {
+  try {
+    const output = execFileSync("npm", ["view", packageName, "--json"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 10_000,
+    }).trim();
+
+    return output ? JSON.parse(output) as NpmPackageInfo : false;
+  } catch (error) {
+    const text = error instanceof Error ? `${error.message}\n${"stderr" in error ? String(error.stderr) : ""}` : "";
+    if (/E404|404 Not Found|is not in this registry/i.test(text)) {
+      return false;
+    }
+
+    return undefined;
+  }
+}
+
+async function warnAboutNpmPackageName(projectDir: string, gitRemoteUrl: string): Promise<void> {
+  const pkg = await readPackageJson(projectDir);
+  const packageName = pkg && typeof pkg.name === "string" ? pkg.name : undefined;
+
+  if (!pkg || !packageName) {
+    console.log("npm package check: skipped because package.json has no name yet.");
+    return;
+  }
+
+  console.log(`npm package check: npm view ${packageName}`);
+  const packageInfo = npmPackageExists(packageName);
+
+  if (packageInfo === false) {
+    console.log(`npm package check: ${packageName} is not published yet.`);
+    return;
+  }
+
+  if (packageInfo === undefined) {
+    console.log(`npm package check: unable to verify ${packageName}; check npm access before enabling release publishing.`);
+    return;
+  }
+
+  const npmRepository = typeof packageInfo.repository === "string"
+    ? packageInfo.repository
+    : packageInfo.repository?.url;
+  const localRepository = repositoryUrlFromPackage(pkg) || gitRemoteUrl;
+  const sameRepository = npmRepository
+    ? normalizePackageUrl(npmRepository) === normalizePackageUrl(localRepository)
+    : false;
+  const version = packageInfo.version || "";
+
+  if (sameRepository) {
+    console.log(`npm package check: ${packageName}${version ? `@${version}` : ""} already exists and points to this repository.`);
+    return;
+  }
+
+  console.log(`WARNING: npm package "${packageName}" already exists${version ? ` (${version})` : ""}.`);
+  if (npmRepository) {
+    console.log(`WARNING: npm registry repository: ${npmRepository}`);
+  }
+  console.log(`WARNING: local repository: ${localRepository}`);
+  console.log("WARNING: publish will fail unless your npm token or Trusted Publisher has publish access to that exact package.");
+  console.log("WARNING: use an available package name or a scoped name like @your-org/package-name if this npm package belongs to someone else.");
 }
 
 async function writeOrPreview(
@@ -183,6 +294,9 @@ export async function runAddSemanticRelease(argv = process.argv.slice(2)): Promi
   const publishToNpm = shouldAskAboutNpmPublishing(mode, hasPackageJson)
     ? await confirmAction("Publish this package to npm with @semantic-release/npm?")
     : false;
+  if (publishToNpm) {
+    await warnAboutNpmPackageName(options.projectDir, git.remoteUrl);
+  }
   const deps = [...baseDeps, ...(publishToNpm ? ["@semantic-release/npm"] : []), ...providerDeps(provider)];
   const [installBin, installArgs] = installCommand(packageManager, deps);
   const workflowFileName = provider === "github"
@@ -290,7 +404,7 @@ export async function runAddSemanticRelease(argv = process.argv.slice(2)): Promi
   }
   if (publishToNpm) {
     console.log("npm auth: configure npm Trusted Publishing for this GitHub Actions workflow on npmjs.com.");
-    console.log("Do not set NPM_TOKEN for Trusted Publishing; a present or invalid token forces token auth and can block OIDC.");
+    console.log("npm auth: for a first publish or occupied package name, set a valid NPM_TOKEN with publish access to the exact package.");
   }
   console.log(`Next: git commit -m "chore: setup semantic-release (${provider})"`);
 }

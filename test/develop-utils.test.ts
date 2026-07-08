@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -38,6 +38,33 @@ function runCli(args: string[], input = "", env: NodeJS.ProcessEnv = {}): string
     },
     input,
   });
+}
+
+async function fakeNpmViewBin(packageName: string, result: "missing" | Record<string, unknown>): Promise<string> {
+  const binDir = await mkdtemp(path.join(tmpdir(), "develop-utils-fake-npm-"));
+  await mkdir(binDir, { recursive: true });
+  const script = result === "missing"
+    ? `#!/bin/sh
+if [ "$1" = "view" ] && [ "$2" = "${packageName}" ]; then
+  echo "npm ERR! code E404" >&2
+  echo "npm ERR! 404 Not Found - GET https://registry.npmjs.org/${packageName}" >&2
+  exit 1
+fi
+echo "unexpected npm command: $@" >&2
+exit 1
+`
+    : `#!/bin/sh
+if [ "$1" = "view" ] && [ "$2" = "${packageName}" ]; then
+  printf '%s\\n' '${JSON.stringify(result).replaceAll("'", "'\\''")}'
+  exit 0
+fi
+echo "unexpected npm command: $@" >&2
+exit 1
+`;
+  const npmPath = path.join(binDir, "npm");
+  await writeFile(npmPath, script);
+  await chmod(npmPath, 0o755);
+  return `${binDir}:${process.env.PATH || ""}`;
 }
 
 test("add-licenses derives owner and repository metadata from git config", async () => {
@@ -191,7 +218,10 @@ test("add-semantic-release adds npm publishing when Node repo approves it", asyn
     version: "0.1.0",
   }, null, 2));
 
-  const output = runCli(["add-semantic-release", dir, "--mode", "ci-npx"], "y\ny\ny\n");
+  const pathWithFakeNpm = await fakeNpmViewBin("sample-project", "missing");
+  const output = runCli(["add-semantic-release", dir, "--mode", "ci-npx"], "y\ny\ny\n", {
+    PATH: pathWithFakeNpm,
+  });
 
   const config = JSON.parse(await readFile(path.join(dir, ".releaserc.json"), "utf8")) as {
     plugins: Array<unknown>;
@@ -200,6 +230,7 @@ test("add-semantic-release adds npm publishing when Node repo approves it", asyn
 
   assert.match(output, /Publish this package to npm with @semantic-release\/npm\? \[y\/n\]/);
   assert.match(output, /npm publishing: enabled with @semantic-release\/npm/);
+  assert.match(output, /npm package check: sample-project is not published yet/);
   assert.match(output, /npm auth: configure npm Trusted Publishing/);
   assert.deepEqual(config.plugins[3], "@semantic-release/npm");
   assert.deepEqual(config.plugins[4], [
@@ -219,6 +250,34 @@ test("add-semantic-release adds npm publishing when Node repo approves it", asyn
   assert.match(workflow, /registry-url: https:\/\/registry\.npmjs\.org/);
   assert.match(workflow, /--package @semantic-release\/npm@latest/);
   assert.match(workflow, /NPM_TOKEN: \$\{\{ secrets\.NPM_TOKEN \}\}/);
+});
+
+test("add-semantic-release warns when npm package name already points to another repository", async () => {
+  const dir = await tempRepo("develop-utils-semrel-npm-taken-");
+  await writeFile(path.join(dir, "package.json"), JSON.stringify({
+    name: "taken-project",
+    version: "0.1.0",
+    repository: {
+      type: "git",
+      url: "git+https://github.com/test-owner/test-repo.git",
+    },
+  }, null, 2));
+  const pathWithFakeNpm = await fakeNpmViewBin("taken-project", {
+    name: "taken-project",
+    version: "2.0.0",
+    repository: {
+      url: "git+https://github.com/someone-else/taken-project.git",
+    },
+  });
+
+  const output = runCli(["add-semantic-release", dir, "--mode", "ci-npx", "--dry-run"], "y\n", {
+    PATH: pathWithFakeNpm,
+  });
+
+  assert.match(output, /npm package check: npm view taken-project/);
+  assert.match(output, /WARNING: npm package "taken-project" already exists \(2\.0\.0\)\./);
+  assert.match(output, /WARNING: npm registry repository: git\+https:\/\/github\.com\/someone-else\/taken-project\.git/);
+  assert.match(output, /WARNING: publish will fail unless your npm token or Trusted Publisher has publish access/);
 });
 
 test("add-semantic-release leaves npm publishing out when Node repo declines it", async () => {
@@ -249,7 +308,10 @@ test("add-semantic-release local-node dry-run installs npm plugin only when appr
     version: "0.1.0",
   }, null, 2));
 
-  const output = runCli(["add-semantic-release", dir, "--mode", "local-node", "--dry-run"], "y\n");
+  const pathWithFakeNpm = await fakeNpmViewBin("sample-project", "missing");
+  const output = runCli(["add-semantic-release", dir, "--mode", "local-node", "--dry-run"], "y\n", {
+    PATH: pathWithFakeNpm,
+  });
 
   assert.match(output, /DRY RUN command: npm install --save-dev .*@semantic-release\/npm/);
 });
