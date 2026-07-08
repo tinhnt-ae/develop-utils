@@ -1,11 +1,15 @@
 import type { GitProvider } from "../../shared/types.js";
 
-export function npxReleaseCommand(provider: GitProvider): string {
+export function npxReleaseCommand(provider: GitProvider, publishToNpm = false): string {
   const packages = [
     "semantic-release@latest",
     "@semantic-release/changelog@latest",
     "@semantic-release/git@latest",
   ];
+
+  if (publishToNpm) {
+    packages.push("@semantic-release/npm@latest");
+  }
 
   if (provider === "github") {
     packages.push("@semantic-release/github@latest");
@@ -15,4 +19,3 @@ export function npxReleaseCommand(provider: GitProvider): string {
 
   return `npx ${packages.map((pkg) => `--package ${pkg}`).join(" ")} semantic-release`;
 }
-

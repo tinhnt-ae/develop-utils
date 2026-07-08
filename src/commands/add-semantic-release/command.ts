@@ -30,6 +30,9 @@ Creating or overwriting release config/workflow files requires approval. In
 local-node mode, package.json creation/update and dependency installation also
 require approval.
 
+For Node package repositories, the command asks whether to add
+@semantic-release/npm for npm publishing.
+
 Modes:
   auto        Node projects use local dependencies; non-Node repos use CI/npx mode.
   ci-npx      Language-agnostic; no package.json is created or modified.
@@ -51,6 +54,10 @@ function resolveMode(mode: SemanticReleaseMode, hasPackageJson: boolean): Resolv
   }
 
   return mode;
+}
+
+function shouldAskAboutNpmPublishing(mode: ResolvedSemanticReleaseMode, hasPackageJson: boolean): boolean {
+  return hasPackageJson || mode === "local-node";
 }
 
 async function writeOrPreview(
@@ -173,7 +180,10 @@ export async function runAddSemanticRelease(argv = process.argv.slice(2)): Promi
     }
   }
 
-  const deps = [...baseDeps, ...providerDeps(provider)];
+  const publishToNpm = shouldAskAboutNpmPublishing(mode, hasPackageJson)
+    ? await confirmAction("Publish this package to npm with @semantic-release/npm?")
+    : false;
+  const deps = [...baseDeps, ...(publishToNpm ? ["@semantic-release/npm"] : []), ...providerDeps(provider)];
   const [installBin, installArgs] = installCommand(packageManager, deps);
   const workflowFileName = provider === "github"
     ? ".github/workflows/release.yml"
@@ -181,12 +191,12 @@ export async function runAddSemanticRelease(argv = process.argv.slice(2)): Promi
       ? ".gitlab-ci.yml"
       : "bitbucket-pipelines.yml";
   const workflowContent = provider === "github"
-    ? githubWorkflow(branch, provider, mode, packageManager)
+    ? githubWorkflow(branch, provider, mode, packageManager, publishToNpm)
     : provider === "gitlab"
-      ? gitlabWorkflow(branch, provider, mode, packageManager)
-      : bitbucketWorkflow(branch, provider, mode, packageManager);
+      ? gitlabWorkflow(branch, provider, mode, packageManager, publishToNpm)
+      : bitbucketWorkflow(branch, provider, mode, packageManager, publishToNpm);
   const plannedFiles = [
-    [".releaserc.json", semanticReleaseConfig(branch, provider, mode)],
+    [".releaserc.json", semanticReleaseConfig(branch, provider, mode, publishToNpm)],
     [workflowFileName, workflowContent],
   ] as const;
   const approvedFiles: Array<typeof plannedFiles[number]> = [];
@@ -201,6 +211,9 @@ export async function runAddSemanticRelease(argv = process.argv.slice(2)): Promi
   if (mode === "local-node") {
     console.log(`Package manager: ${packageManager}`);
   }
+  if (publishToNpm) {
+    console.log("npm publishing: enabled with @semantic-release/npm");
+  }
   console.log(`Node.js: ${nodeVersion}`);
 
   if (mode === "local-node") {
@@ -214,7 +227,7 @@ export async function runAddSemanticRelease(argv = process.argv.slice(2)): Promi
       }
     }
   } else {
-    console.log(`Release command: ${npxReleaseCommand(provider)}`);
+    console.log(`Release command: ${npxReleaseCommand(provider, publishToNpm)}`);
   }
 
   const changedFiles: string[] = [];

@@ -71,6 +71,24 @@ approval. In `local-node` mode it also asks before creating/updating
 `package.json` and before installing semantic-release dependencies. Type `y` or
 `n` and press Enter for each question.
 
+For Node package repositories, `add-semantic-release` also asks:
+
+```text
+Publish this package to npm with @semantic-release/npm? [y/n]
+```
+
+Answer `y` when the package should be published to the npm registry. The command
+then adds `@semantic-release/npm` to the release config, includes it in the
+local install or generated npx release command, and adds GitHub Actions
+`id-token: write` permission for npm trusted publishing.
+
+Before enabling npm publishing, prepare:
+
+- npm package ownership or publish access for the package name
+- npm Trusted Publisher configured for `.github/workflows/release.yml`
+- Conventional Commits for release versioning
+- local verification with `npm test`, `npm run pack:dry-run`, and `npx semantic-release --dry-run`
+
 ## Why
 
 See `FEATURE.md` for the longer rationale, pain points, and language support matrix.

@@ -136,12 +136,14 @@ test("add-semantic-release dry-run detects pnpm local-node mode and does not wri
   }, null, 2));
   await writeFile(path.join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
 
-  await runAddSemanticRelease([dir, "--dry-run"]);
+  const output = runCli(["add-semantic-release", dir, "--dry-run"], "n\n");
 
   await assert.rejects(
     readFile(path.join(dir, ".releaserc.json"), "utf8"),
     /ENOENT/,
   );
+  assert.match(output, /DRY RUN command: pnpm add -D semantic-release/);
+  assert.doesNotMatch(output, /DRY RUN command: .*@semantic-release\/npm/);
 });
 
 test("add-semantic-release auto mode uses ci-npx for non-Node repositories", async () => {
@@ -170,7 +172,70 @@ test("add-semantic-release auto mode uses ci-npx for non-Node repositories", asy
     },
   ]);
   assert.match(workflow, /npx --package semantic-release@latest/);
+  assert.doesNotMatch(workflow, /@semantic-release\/npm/);
+  assert.doesNotMatch(workflow, /id-token: write/);
+  assert.doesNotMatch(workflow, /Publish this package to npm/);
   assert.doesNotMatch(workflow, /npm ci|pnpm install|yarn install/);
+});
+
+test("add-semantic-release adds npm publishing when Node repo approves it", async () => {
+  const dir = await tempRepo("develop-utils-semrel-npm-yes-");
+  await writeFile(path.join(dir, "package.json"), JSON.stringify({
+    name: "sample-project",
+    version: "0.1.0",
+  }, null, 2));
+
+  const output = runCli(["add-semantic-release", dir, "--mode", "ci-npx"], "y\ny\ny\n");
+
+  const config = JSON.parse(await readFile(path.join(dir, ".releaserc.json"), "utf8")) as {
+    plugins: Array<unknown>;
+  };
+  const workflow = await readFile(path.join(dir, ".github/workflows/release.yml"), "utf8");
+
+  assert.match(output, /Publish this package to npm with @semantic-release\/npm\? \[y\/n\]/);
+  assert.match(output, /npm publishing: enabled with @semantic-release\/npm/);
+  assert.deepEqual(config.plugins[3], "@semantic-release/npm");
+  assert.deepEqual(config.plugins[4], [
+    "@semantic-release/git",
+    {
+      assets: ["CHANGELOG.md", "package.json", "package-lock.json"],
+      message: "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
+    },
+  ]);
+  assert.match(workflow, /id-token: write/);
+  assert.match(workflow, /--package @semantic-release\/npm@latest/);
+});
+
+test("add-semantic-release leaves npm publishing out when Node repo declines it", async () => {
+  const dir = await tempRepo("develop-utils-semrel-npm-no-");
+  await writeFile(path.join(dir, "package.json"), JSON.stringify({
+    name: "sample-project",
+    version: "0.1.0",
+  }, null, 2));
+
+  const output = runCli(["add-semantic-release", dir, "--mode", "ci-npx"], "n\ny\ny\n");
+
+  const config = JSON.parse(await readFile(path.join(dir, ".releaserc.json"), "utf8")) as {
+    plugins: Array<unknown>;
+  };
+  const workflow = await readFile(path.join(dir, ".github/workflows/release.yml"), "utf8");
+
+  assert.match(output, /Publish this package to npm with @semantic-release\/npm\? \[y\/n\]/);
+  assert.notDeepEqual(config.plugins[3], "@semantic-release/npm");
+  assert.doesNotMatch(workflow, /id-token: write/);
+  assert.doesNotMatch(workflow, /@semantic-release\/npm/);
+});
+
+test("add-semantic-release local-node dry-run installs npm plugin only when approved", async () => {
+  const dir = await tempRepo("develop-utils-semrel-local-node-npm-");
+  await writeFile(path.join(dir, "package.json"), JSON.stringify({
+    name: "sample-project",
+    version: "0.1.0",
+  }, null, 2));
+
+  const output = runCli(["add-semantic-release", dir, "--mode", "local-node", "--dry-run"], "y\n");
+
+  assert.match(output, /DRY RUN command: npm install --save-dev .*@semantic-release\/npm/);
 });
 
 test("add-semantic-release does not write release files without approval", async () => {

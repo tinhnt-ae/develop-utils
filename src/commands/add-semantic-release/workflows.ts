@@ -8,9 +8,10 @@ export function githubWorkflow(
   provider: GitProvider,
   mode: ResolvedSemanticReleaseMode,
   packageManager: PackageManager,
+  publishToNpm = false,
 ): string {
   const install = mode === "local-node" ? ciInstallCommand(packageManager) : "";
-  const release = mode === "local-node" ? ciReleaseCommand(packageManager) : npxReleaseCommand(provider);
+  const release = mode === "local-node" ? ciReleaseCommand(packageManager) : npxReleaseCommand(provider, publishToNpm);
   const pnpmSetup = mode === "local-node" && packageManager === "pnpm"
     ? `
       - uses: pnpm/action-setup@v4
@@ -38,7 +39,7 @@ on:
 permissions:
   contents: write
   issues: write
-  pull-requests: write
+  pull-requests: write${publishToNpm ? "\n  id-token: write" : ""}
 
 jobs:
   release:
@@ -61,9 +62,10 @@ export function gitlabWorkflow(
   provider: GitProvider,
   mode: ResolvedSemanticReleaseMode,
   packageManager: PackageManager,
+  publishToNpm = false,
 ): string {
   const installStep = mode === "local-node" ? `    - ${ciInstallCommand(packageManager)}\n` : "";
-  const release = mode === "local-node" ? ciReleaseCommand(packageManager) : npxReleaseCommand(provider);
+  const release = mode === "local-node" ? ciReleaseCommand(packageManager) : npxReleaseCommand(provider, publishToNpm);
 
   return `release:
   image: node:24
@@ -79,9 +81,10 @@ export function bitbucketWorkflow(
   provider: GitProvider,
   mode: ResolvedSemanticReleaseMode,
   packageManager: PackageManager,
+  publishToNpm = false,
 ): string {
   const installStep = mode === "local-node" ? `            - ${ciInstallCommand(packageManager)}\n` : "";
-  const release = mode === "local-node" ? ciReleaseCommand(packageManager) : npxReleaseCommand(provider);
+  const release = mode === "local-node" ? ciReleaseCommand(packageManager) : npxReleaseCommand(provider, publishToNpm);
 
   return `pipelines:
   branches:
@@ -92,4 +95,3 @@ export function bitbucketWorkflow(
 ${installStep}            - ${release}
 `;
 }
-

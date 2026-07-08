@@ -3,11 +3,19 @@ import type { ResolvedSemanticReleaseMode } from "./types.js";
 
 type SemanticReleasePlugin = string | [string, Record<string, unknown>];
 
-export function semanticReleaseConfig(branch: string, provider: GitProvider, mode: ResolvedSemanticReleaseMode): string {
+export function semanticReleaseConfig(
+  branch: string,
+  provider: GitProvider,
+  mode: ResolvedSemanticReleaseMode,
+  publishToNpm = false,
+): string {
   const assets = ["CHANGELOG.md"];
 
-  if (mode === "local-node") {
+  if (mode === "local-node" || publishToNpm) {
     assets.push("package.json");
+  }
+  if (publishToNpm) {
+    assets.push("package-lock.json");
   }
 
   const plugins: SemanticReleasePlugin[] = [
@@ -17,14 +25,19 @@ export function semanticReleaseConfig(branch: string, provider: GitProvider, mod
       "@semantic-release/changelog",
       { changelogFile: "CHANGELOG.md" },
     ],
-    [
-      "@semantic-release/git",
-      {
-        assets,
-        message: "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
-      },
-    ],
   ];
+
+  if (publishToNpm) {
+    plugins.push("@semantic-release/npm");
+  }
+
+  plugins.push([
+    "@semantic-release/git",
+    {
+      assets,
+      message: "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
+    },
+  ]);
 
   if (provider === "github") {
     plugins.push("@semantic-release/github");
@@ -34,4 +47,3 @@ export function semanticReleaseConfig(branch: string, provider: GitProvider, mod
 
   return `${JSON.stringify({ branches: [branch], plugins }, null, 2)}\n`;
 }
-
