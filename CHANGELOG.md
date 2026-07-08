@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.1...v1.1.2) (2026-07-08)
+
+
+### Bug Fixes
+
+* ci deploy ([9daa278](https://github.com/tinhnt-ae/develop-utils/commit/9daa278027be969c401a376a82a4ede91fd0c884))
+
 ## [1.1.1](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.0...v1.1.1) (2026-07-08)
 
 
