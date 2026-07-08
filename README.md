@@ -80,24 +80,20 @@ Publish this package to npm with @semantic-release/npm? [y/n]
 Answer `y` when the package should be published to the npm registry. The command
 then adds `@semantic-release/npm` to the release config, includes it in the
 local install or generated npx release command, adds GitHub Actions
-`id-token: write` permission for npm trusted publishing, and exposes
-`NPM_TOKEN` from GitHub Actions secrets for npm token publishing.
+`id-token: write` permission, and configures the workflow for npm Trusted
+Publishing.
 
 Before enabling npm publishing, prepare:
 
 - npm package ownership or publish access for the package name
-- either npm Trusted Publisher configured for `.github/workflows/release.yml`
-  or an npm token saved as the GitHub Actions secret `NPM_TOKEN`
-- when using `NPM_TOKEN` with npm account 2FA enabled, use an npm automation
-  token, or a granular token with package publish access and 2FA bypass enabled
+- npm Trusted Publisher configured for `.github/workflows/release.yml`
+- `package.json` repository metadata matching the GitHub repository exactly
 - Conventional Commits for release versioning
 - local verification with `npm test`, `npm run pack:dry-run`, and `npx semantic-release --dry-run`
 
-If CI fails with `E403` and says `Two-factor authentication or granular access
-token with bypass 2fa enabled is required`, the workflow is reaching npm but the
-token is not allowed to publish under the account's 2FA policy. Replace the
-`NPM_TOKEN` secret with a publish-capable token that satisfies that requirement,
-or configure npm Trusted Publishing for the workflow.
+For Trusted Publishing, do not set `NPM_TOKEN` in the release job. If
+`NPM_TOKEN` is present, `@semantic-release/npm` can validate that token path and
+fail before OIDC publishing is used.
 
 ## Why
 
