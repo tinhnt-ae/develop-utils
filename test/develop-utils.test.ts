@@ -204,6 +204,7 @@ test("add-semantic-release adds npm publishing when Node repo approves it", asyn
   ]);
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /--package @semantic-release\/npm@latest/);
+  assert.match(workflow, /NPM_TOKEN: \$\{\{ secrets\.NPM_TOKEN \}\}/);
 });
 
 test("add-semantic-release leaves npm publishing out when Node repo declines it", async () => {
