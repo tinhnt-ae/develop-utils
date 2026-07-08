@@ -288,5 +288,9 @@ export async function runAddSemanticRelease(argv = process.argv.slice(2)): Promi
       console.log(`  - ${fileName}`);
     }
   }
+  if (publishToNpm) {
+    console.log("npm auth: configure GitHub secret NPM_TOKEN with an npm automation token, or a granular token with package publish access and 2FA bypass enabled.");
+    console.log("Trusted Publishing can be used instead when it is configured for this workflow on npmjs.com.");
+  }
   console.log(`Next: git commit -m "chore: setup semantic-release (${provider})"`);
 }

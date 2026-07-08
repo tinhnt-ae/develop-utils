@@ -194,6 +194,7 @@ test("add-semantic-release adds npm publishing when Node repo approves it", asyn
 
   assert.match(output, /Publish this package to npm with @semantic-release\/npm\? \[y\/n\]/);
   assert.match(output, /npm publishing: enabled with @semantic-release\/npm/);
+  assert.match(output, /npm auth: configure GitHub secret NPM_TOKEN/);
   assert.deepEqual(config.plugins[3], "@semantic-release/npm");
   assert.deepEqual(config.plugins[4], [
     "@semantic-release/git",

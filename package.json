@@ -47,5 +47,9 @@
     "@types/node": "^20.19.4",
     "semantic-release": "^25.0.5",
     "typescript": "^5.8.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tinhnt-ae/develop-utils.git"
   }
 }

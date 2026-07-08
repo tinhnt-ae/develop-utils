@@ -87,9 +87,17 @@ Before enabling npm publishing, prepare:
 
 - npm package ownership or publish access for the package name
 - either npm Trusted Publisher configured for `.github/workflows/release.yml`
-  or an npm automation token saved as the GitHub Actions secret `NPM_TOKEN`
+  or an npm token saved as the GitHub Actions secret `NPM_TOKEN`
+- when using `NPM_TOKEN` with npm account 2FA enabled, use an npm automation
+  token, or a granular token with package publish access and 2FA bypass enabled
 - Conventional Commits for release versioning
 - local verification with `npm test`, `npm run pack:dry-run`, and `npx semantic-release --dry-run`
+
+If CI fails with `E403` and says `Two-factor authentication or granular access
+token with bypass 2fa enabled is required`, the workflow is reaching npm but the
+token is not allowed to publish under the account's 2FA policy. Replace the
+`NPM_TOKEN` secret with a publish-capable token that satisfies that requirement,
+or configure npm Trusted Publishing for the workflow.
 
 ## Why
 
