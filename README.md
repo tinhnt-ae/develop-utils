@@ -80,14 +80,14 @@ Publish this package to npm with @semantic-release/npm? [y/n]
 Answer `y` when the package should be published to the npm registry. The command
 then adds `@semantic-release/npm` to the release config, includes it in the
 local install or generated npx release command, adds GitHub Actions
-`id-token: write` permission for npm trusted publishing, and wires
-`NPM_TOKEN` into the workflow as a fallback for token-based publishing.
+`id-token: write` permission for npm trusted publishing, and exposes
+`NPM_TOKEN` from GitHub Actions secrets for npm token publishing.
 
 Before enabling npm publishing, prepare:
 
 - npm package ownership or publish access for the package name
-- npm Trusted Publisher configured for `.github/workflows/release.yml`
-- `NPM_TOKEN` repository secret configured when trusted publishing is not yet available
+- either npm Trusted Publisher configured for `.github/workflows/release.yml`
+  or an npm automation token saved as the GitHub Actions secret `NPM_TOKEN`
 - Conventional Commits for release versioning
 - local verification with `npm test`, `npm run pack:dry-run`, and `npx semantic-release --dry-run`
 

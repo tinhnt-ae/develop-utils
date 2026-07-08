@@ -53,7 +53,8 @@ ${pnpmSetup}
 ${installStep}
       - run: ${release}
         env:
-          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}${publishToNpm ? "\n          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}" : ""}
+          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+${publishToNpm ? "          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}\n" : ""}
 `;
 }
 

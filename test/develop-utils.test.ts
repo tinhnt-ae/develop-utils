@@ -225,6 +225,7 @@ test("add-semantic-release leaves npm publishing out when Node repo declines it"
   assert.notDeepEqual(config.plugins[3], "@semantic-release/npm");
   assert.doesNotMatch(workflow, /id-token: write/);
   assert.doesNotMatch(workflow, /@semantic-release\/npm/);
+  assert.doesNotMatch(workflow, /NPM_TOKEN/);
 });
 
 test("add-semantic-release local-node dry-run installs npm plugin only when approved", async () => {
