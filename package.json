@@ -1,0 +1,37 @@
+{
+  "name": "develop-utils",
+  "version": "0.1.0",
+  "description": "Repository setup utilities for license files and semantic-release.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "develop-utils": "./bin/develop-utils.js",
+    "add-licenses": "./bin/add-licenses.js",
+    "add-semantic-release": "./bin/add-semantic-release.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "FEATURE.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "pack:dry-run": "npm pack --dry-run",
+    "release": "semantic-release"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "license",
+    "semantic-release",
+    "repository",
+    "setup",
+    "git"
+  ]
+}
