@@ -68,7 +68,8 @@ export async function confirmAction(message: string): Promise<boolean> {
 
 async function questionFromPipe(prompt: string): Promise<string | undefined> {
   output.write(prompt);
-  const answer = await promptLines().next();
+  const lines = promptLines();
+  const answer = await lines.next();
   return answer.done ? undefined : answer.value;
 }
 
