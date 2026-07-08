@@ -171,6 +171,12 @@ test("add-semantic-release auto mode uses ci-npx for non-Node repositories", asy
       message: "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
     },
   ]);
+  assert.deepEqual(config.plugins[4], [
+    "@semantic-release/github",
+    {
+      failCommentCondition: false,
+    },
+  ]);
   assert.match(workflow, /npx --package semantic-release@latest/);
   assert.doesNotMatch(workflow, /@semantic-release\/npm/);
   assert.doesNotMatch(workflow, /id-token: write/);
@@ -203,10 +209,16 @@ test("add-semantic-release adds npm publishing when Node repo approves it", asyn
       message: "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
     },
   ]);
+  assert.deepEqual(config.plugins[5], [
+    "@semantic-release/github",
+    {
+      failCommentCondition: false,
+    },
+  ]);
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /registry-url: https:\/\/registry\.npmjs\.org/);
   assert.match(workflow, /--package @semantic-release\/npm@latest/);
-  assert.doesNotMatch(workflow, /NPM_TOKEN/);
+  assert.match(workflow, /NPM_TOKEN: \$\{\{ secrets\.NPM_TOKEN \}\}/);
 });
 
 test("add-semantic-release leaves npm publishing out when Node repo declines it", async () => {

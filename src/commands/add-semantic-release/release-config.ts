@@ -40,7 +40,12 @@ export function semanticReleaseConfig(
   ]);
 
   if (provider === "github") {
-    plugins.push("@semantic-release/github");
+    plugins.push([
+      "@semantic-release/github",
+      {
+        failCommentCondition: false,
+      },
+    ]);
   } else if (provider === "gitlab") {
     plugins.push("@semantic-release/gitlab");
   }
