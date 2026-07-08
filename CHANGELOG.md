@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.0...v1.1.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* adjust flow for deploy npm package ([9d17f4f](https://github.com/tinhnt-ae/develop-utils/commit/9d17f4fbf830036e5b404ba39808d7188b03a393))
+
 # [1.1.0](https://github.com/tinhnt-ae/develop-utils/compare/v1.0.0...v1.1.0) (2026-07-08)
 
 
