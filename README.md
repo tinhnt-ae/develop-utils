@@ -58,49 +58,22 @@ Type `y` or `n` and press Enter for each question.
 
 ## Semantic Release Modes
 
-`add-semantic-release` defaults to `--mode auto`.
+`add-semantic-release` supports `auto`, `local-node`, and `ci-npx` modes. It
+asks before writing release config or workflow files, and can optionally enable
+`@semantic-release/npm` for npm package publishing.
 
-- `auto`: Node projects use local package-manager dependencies; non-Node repos use CI/npx mode.
-- `local-node`: installs semantic-release into the target Node project with npm, pnpm, or yarn.
-- `ci-npx`: language-agnostic; generates release config and CI workflow without creating `package.json`.
+See:
 
-Use `ci-npx` for Kotlin, Java, Python, Rust, Go, docs, or any repo where release automation should not add Node project files.
-
-Before writing release config or workflow files, `add-semantic-release` asks for
-approval. In `local-node` mode it also asks before creating/updating
-`package.json` and before installing semantic-release dependencies. Type `y` or
-`n` and press Enter for each question.
-
-For Node package repositories, `add-semantic-release` also asks:
-
-```text
-Publish this package to npm with @semantic-release/npm? [y/n]
-```
-
-Answer `y` when the package should be published to the npm registry. The command
-then adds `@semantic-release/npm` to the release config, includes it in the
-local install or generated npx release command, adds GitHub Actions
-`id-token: write` permission, and configures the workflow for npm Trusted
-Publishing.
-
-Before enabling npm publishing, prepare:
-
-- npm package ownership or publish access for the package name
-- npm Trusted Publisher configured for workflow filename `release.yml`
-- `package.json` repository metadata matching the GitHub repository exactly
-- Conventional Commits for release versioning
-- local verification with `npm test`, `npm run pack:dry-run`, and `npx semantic-release --dry-run`
-
-For Trusted Publishing, npm must already know that the package trusts this
-workflow. On npmjs.com, configure the GitHub Actions trusted publisher with the
-GitHub owner, repository, workflow filename `release.yml`, and allowed action
-`npm publish`. If OIDC token exchange reports `package not found`, publish the
-package once locally with `npm publish --access public --otp <code>` or create
-the package before re-running the release.
+- [Semantic release setup](docs/semantic-release.md)
+- [npm publishing checklist](docs/npm-publishing.md)
 
 ## Why
 
 See `FEATURE.md` for the longer rationale, pain points, and language support matrix.
+
+## License
+
+MIT. See `LICENSE`.
 
 ## Publishing
 
