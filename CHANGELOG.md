@@ -1,3 +1,10 @@
+## [1.1.5](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.4...v1.1.5) (2026-07-09)
+
+
+### Bug Fixes
+
+* change docs and license for public repo ([cd4c2ef](https://github.com/tinhnt-ae/develop-utils/commit/cd4c2efae15e4384848c326c213978f68dacc861))
+
 ## [1.1.4](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.3...v1.1.4) (2026-07-09)
 
 
