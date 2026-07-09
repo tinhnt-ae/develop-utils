@@ -58,7 +58,6 @@ ${installStep}
       - run: ${release}
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-${publishToNpm ? "          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}\n" : ""}
 `;
 }
 

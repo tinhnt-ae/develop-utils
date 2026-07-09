@@ -249,7 +249,7 @@ test("add-semantic-release adds npm publishing when Node repo approves it", asyn
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /registry-url: https:\/\/registry\.npmjs\.org/);
   assert.match(workflow, /--package @semantic-release\/npm@latest/);
-  assert.match(workflow, /NPM_TOKEN: \$\{\{ secrets\.NPM_TOKEN \}\}/);
+  assert.doesNotMatch(workflow, /NPM_TOKEN/);
 });
 
 test("add-semantic-release warns when npm package name already points to another repository", async () => {
@@ -277,7 +277,7 @@ test("add-semantic-release warns when npm package name already points to another
   assert.match(output, /npm package check: npm view taken-project/);
   assert.match(output, /WARNING: npm package "taken-project" already exists \(2\.0\.0\)\./);
   assert.match(output, /WARNING: npm registry repository: git\+https:\/\/github\.com\/someone-else\/taken-project\.git/);
-  assert.match(output, /WARNING: publish will fail unless your npm token or Trusted Publisher has publish access/);
+  assert.match(output, /WARNING: publish will fail unless npm Trusted Publishing or your npm token has access/);
 });
 
 test("add-semantic-release warns locally when package name is unscoped repo name", async () => {

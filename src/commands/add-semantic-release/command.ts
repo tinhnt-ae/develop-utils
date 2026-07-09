@@ -223,7 +223,7 @@ async function warnAboutNpmPackageName(projectDir: string, gitRemoteUrl: string)
     console.log(`WARNING: npm registry repository: ${npmRepository}`);
   }
   console.log(`WARNING: local repository: ${localRepository}`);
-  console.log("WARNING: publish will fail unless your npm token or Trusted Publisher has publish access to that exact package.");
+  console.log("WARNING: publish will fail unless npm Trusted Publishing or your npm token has access to that exact package.");
   console.log("WARNING: use an available package name or a scoped name like @your-org/package-name if this npm package belongs to someone else.");
 }
 
@@ -460,7 +460,7 @@ export async function runAddSemanticRelease(argv = process.argv.slice(2)): Promi
   }
   if (publishToNpm) {
     console.log("npm auth: configure npm Trusted Publishing for this GitHub Actions workflow on npmjs.com.");
-    console.log("npm auth: for a first publish or occupied package name, set a valid NPM_TOKEN with publish access to the exact package.");
+    console.log("npm auth: use workflow filename release.yml, owner/repository from GitHub, and allowed action npm publish.");
   }
   console.log(`Next: git commit -m "chore: setup semantic-release (${provider})"`);
 }
