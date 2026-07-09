@@ -35,6 +35,11 @@ interface NpmPackageInfo {
   } | string;
 }
 
+interface GitHubRepositorySlug {
+  owner: string;
+  repo: string;
+}
+
 export function help(): string {
   return `Usage: devu add-semantic-release [project-dir] [--mode auto|ci-npx|local-node] [--dry-run]
 
@@ -97,6 +102,33 @@ function normalizePackageUrl(url: string): string {
     .toLowerCase();
 }
 
+function gitHubSlugFromRemote(remoteUrl: string): GitHubRepositorySlug | undefined {
+  const normalized = normalizePackageUrl(remoteUrl);
+  const match = normalized.match(/^github\.com\/([^/]+)\/([^/]+)$/);
+
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    owner: match[1],
+    repo: match[2],
+  };
+}
+
+function scopedPackageParts(packageName: string): { scope: string; name: string } | undefined {
+  const match = packageName.match(/^@([^/]+)\/(.+)$/);
+
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    scope: match[1],
+    name: match[2],
+  };
+}
+
 async function readPackageJson(projectDir: string): Promise<PackageJson | undefined> {
   const target = path.join(projectDir, "package.json");
 
@@ -126,6 +158,29 @@ function npmPackageExists(packageName: string): NpmPackageInfo | false | undefin
   }
 }
 
+function warnAboutLocalPackageName(packageName: string, gitRemoteUrl: string): void {
+  const slug = gitHubSlugFromRemote(gitRemoteUrl);
+
+  if (!slug) {
+    return;
+  }
+
+  const scoped = scopedPackageParts(packageName);
+
+  if (!scoped) {
+    if (packageName === slug.repo) {
+      console.log(`local package check: "${packageName}" is unscoped; npm will publish the global package name.`);
+      console.log(`local package check: use "@${slug.owner}/${slug.repo}" if this should publish under the GitHub/npm org scope.`);
+    }
+    return;
+  }
+
+  if (scoped.scope !== slug.owner || scoped.name !== slug.repo) {
+    console.log(`local package check: package name "${packageName}" differs from repository slug "${slug.owner}/${slug.repo}".`);
+    console.log("local package check: keep it only if the npm scope/name is intentional.");
+  }
+}
+
 async function warnAboutNpmPackageName(projectDir: string, gitRemoteUrl: string): Promise<void> {
   const pkg = await readPackageJson(projectDir);
   const packageName = pkg && typeof pkg.name === "string" ? pkg.name : undefined;
@@ -135,6 +190,7 @@ async function warnAboutNpmPackageName(projectDir: string, gitRemoteUrl: string)
     return;
   }
 
+  warnAboutLocalPackageName(packageName, gitRemoteUrl);
   console.log(`npm package check: npm view ${packageName}`);
   const packageInfo = npmPackageExists(packageName);
 

@@ -280,6 +280,39 @@ test("add-semantic-release warns when npm package name already points to another
   assert.match(output, /WARNING: publish will fail unless your npm token or Trusted Publisher has publish access/);
 });
 
+test("add-semantic-release warns locally when package name is unscoped repo name", async () => {
+  const dir = await tempRepo("develop-utils-semrel-unscoped-local-");
+  await writeFile(path.join(dir, "package.json"), JSON.stringify({
+    name: "test-repo",
+    version: "0.1.0",
+  }, null, 2));
+  const pathWithFakeNpm = await fakeNpmViewBin("test-repo", "missing");
+
+  const output = runCli(["add-semantic-release", dir, "--mode", "ci-npx", "--dry-run"], "y\n", {
+    PATH: pathWithFakeNpm,
+  });
+
+  assert.match(output, /local package check: "test-repo" is unscoped; npm will publish the global package name\./);
+  assert.match(output, /local package check: use "@test-owner\/test-repo" if this should publish under the GitHub\/npm org scope\./);
+  assert.match(output, /npm package check: test-repo is not published yet\./);
+});
+
+test("add-semantic-release warns locally when scoped package differs from repository", async () => {
+  const dir = await tempRepo("develop-utils-semrel-scoped-local-");
+  await writeFile(path.join(dir, "package.json"), JSON.stringify({
+    name: "@other-scope/other-name",
+    version: "0.1.0",
+  }, null, 2));
+  const pathWithFakeNpm = await fakeNpmViewBin("@other-scope/other-name", "missing");
+
+  const output = runCli(["add-semantic-release", dir, "--mode", "ci-npx", "--dry-run"], "y\n", {
+    PATH: pathWithFakeNpm,
+  });
+
+  assert.match(output, /local package check: package name "@other-scope\/other-name" differs from repository slug "test-owner\/test-repo"\./);
+  assert.match(output, /local package check: keep it only if the npm scope\/name is intentional\./);
+});
+
 test("add-semantic-release leaves npm publishing out when Node repo declines it", async () => {
   const dir = await tempRepo("develop-utils-semrel-npm-no-");
   await writeFile(path.join(dir, "package.json"), JSON.stringify({
