@@ -1,3 +1,10 @@
+## [1.1.6](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.5...v1.1.6) (2026-07-09)
+
+
+### Bug Fixes
+
+* update package documentation ([5ed5f9d](https://github.com/tinhnt-ae/develop-utils/commit/5ed5f9dcf0328b5b1e7c743fe232bd49946e8245))
+
 ## [1.1.5](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.4...v1.1.5) (2026-07-09)
 
 
