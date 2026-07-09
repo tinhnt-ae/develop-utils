@@ -9,14 +9,14 @@ A small CLI for generating repeatable repository setup files
 ## Install
 
 ```bash
-npm install -g develop-utils
+npm install -g devu-utils
 ```
 
 Or run without installing:
 
 ```bash
-npx --package develop-utils devu add-licenses
-npx --package develop-utils devu add-semantic-release
+npx --package devu-utils devu add-licenses
+npx --package devu-utils devu add-semantic-release
 ```
 
 ## Commands
@@ -66,6 +66,7 @@ See:
 
 - [Semantic release setup](docs/semantic-release.md)
 - [npm publishing checklist](docs/npm-publishing.md)
+- [PostgreSQL provisioning plan](docs/postgres-provisioning-plan.md)
 
 ## Why
 
