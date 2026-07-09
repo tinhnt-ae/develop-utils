@@ -1,3 +1,14 @@
+## [1.1.3](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.2...v1.1.3) (2026-07-09)
+
+
+### Bug Fixes
+
+* change package name ([cada339](https://github.com/tinhnt-ae/develop-utils/commit/cada33961073b02203913ff2bbe66a60b0237990))
+* release config ([236caa2](https://github.com/tinhnt-ae/develop-utils/commit/236caa2a0110d3956b565eb1a77f37370cdb006f))
+* release package to npm ([49160eb](https://github.com/tinhnt-ae/develop-utils/commit/49160eb2aab78299db1e79e874ada5b99de6e291))
+* skip npm publish to fix failing release CI ([28fbe1e](https://github.com/tinhnt-ae/develop-utils/commit/28fbe1e63d152a4f09342775f20482862511d55e))
+* update registry ([3667cac](https://github.com/tinhnt-ae/develop-utils/commit/3667cac6be3f21a07317254b8b0c2c870322fed8))
+
 ## [1.1.2](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.1...v1.1.2) (2026-07-08)
 
 
