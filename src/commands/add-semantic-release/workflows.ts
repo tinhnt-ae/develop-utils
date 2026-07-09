@@ -23,10 +23,6 @@ export function githubWorkflow(
     ? `
           cache: ${packageManager === "npm" ? "npm" : packageManager}`
     : "";
-  const registry = publishToNpm
-    ? `
-          registry-url: https://registry.npmjs.org`
-    : "";
   const installStep = install
     ? `
       - run: ${install}
@@ -53,7 +49,7 @@ jobs:
 ${pnpmSetup}
       - uses: actions/setup-node@v5
         with:
-          node-version: 24${registry}${cache}
+          node-version: 24${cache}
 ${installStep}
       - run: ${release}
         env:
