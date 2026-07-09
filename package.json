@@ -12,6 +12,7 @@
   },
   "files": [
     "dist/",
+    "docs/",
     "FEATURE.md",
     "README.md",
     "LICENSE"
