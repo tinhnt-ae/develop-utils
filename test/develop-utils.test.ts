@@ -247,7 +247,7 @@ test("add-semantic-release adds npm publishing when Node repo approves it", asyn
     },
   ]);
   assert.match(workflow, /id-token: write/);
-  assert.match(workflow, /registry-url: https:\/\/registry\.npmjs\.org/);
+  assert.doesNotMatch(workflow, /registry-url/);
   assert.match(workflow, /--package @semantic-release\/npm@latest/);
   assert.doesNotMatch(workflow, /NPM_TOKEN/);
 });
