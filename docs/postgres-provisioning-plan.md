@@ -47,11 +47,10 @@ database and role level.
 
 ## Scope
 
-MVP scope:
+Implemented scope:
 
 - `pg init`
-- detection of running PostgreSQL-compatible containers
-- creation of a default shared container when no suitable container exists
+- validation of a named, running PostgreSQL-compatible container
 - database, user, password, and permission provisioning
 - `.env.local` writing
 - `--dry-run`
@@ -65,27 +64,34 @@ Out of scope for MVP:
 - production deployment
 - CI database lifecycle
 - multi-database engine support
+- PostgreSQL container creation or lifecycle management
 
 ## Command Design
 
 MVP command:
 
 ```bash
-npx develop-utils pg init
+devu pg init
 ```
 
 Options:
 
 ```bash
-npx develop-utils pg init --dry-run
-npx develop-utils pg init --yes
-npx develop-utils pg init --env .env.local
-npx develop-utils pg init --project ledgerbase
-npx develop-utils pg init --database ledgerbase_dev
-npx develop-utils pg init --user ledgerbase_user
-npx develop-utils pg init --password auto
-npx develop-utils pg init --container local-postgres
-npx develop-utils pg init --force
+devu pg init --dry-run
+devu pg init --yes
+devu pg init --env .env.local
+devu pg init --project ledgerbase
+devu pg init --database ledgerbase_dev
+devu pg init --user ledgerbase_user
+devu pg init --password auto
+devu pg init --container local-postgres
+devu pg init --force
+```
+
+Run without installing:
+
+```bash
+npx --package devu-utils devu pg init --dry-run
 ```
 
 Later commands:
@@ -105,7 +111,7 @@ when credentials are available.
 Example:
 
 ```text
-$ npx develop-utils pg init
+$ devu pg init
 
 Found PostgreSQL containers:
 1. local-postgres
@@ -123,7 +129,7 @@ Created user: ledgerbase_user
 Granted privileges.
 
 DATABASE_URL:
-postgresql://ledgerbase_user:******@localhost:5432/ledgerbase_dev
+postgresql://ledgerbase_user:******@shared-postgres:5432/ledgerbase_dev
 
 Write DATABASE_URL to .env.local? yes
 ```
@@ -131,10 +137,10 @@ Write DATABASE_URL to .env.local? yes
 Step-by-step behavior:
 
 1. Check whether Docker is installed and reachable.
-2. Detect running PostgreSQL-compatible containers.
-3. Show detected containers.
-4. Ask whether to reuse an existing container.
-5. If no suitable container exists, offer to create a default shared PostgreSQL container.
+2. Inspect the named existing PostgreSQL-compatible container.
+3. Stop if the container is missing, stopped, incompatible, or not ready.
+4. Never create, start, stop, or remove a container.
+5. Resolve the admin role from `--admin-user`, `POSTGRES_USER`, or `postgres`.
 6. Ask for project name.
 7. Generate a safe default database name from project name.
 8. Generate a safe default database user from project name.
@@ -149,7 +155,7 @@ Step-by-step behavior:
 17. Ask whether to write it to `.env.local`.
 18. Never overwrite existing `.env.local` values without explicit confirmation.
 19. Support `--dry-run`.
-20. Warn when a shared container is not recommended.
+20. Default the connection host to the container name for cross-container use.
 
 ## Technical Design
 
@@ -180,17 +186,14 @@ Responsibilities:
 
 - check Docker CLI availability
 - check Docker daemon reachability
-- discover PostgreSQL-compatible containers
-- create the default shared container
-- execute commands inside selected containers
+- inspect and validate the named PostgreSQL-compatible container
+- check PostgreSQL readiness
+- execute commands inside the selected container
 
 Functions:
 
 ```ts
-checkDockerAvailable(): Promise<DockerAvailability>
-findPostgresContainers(): Promise<PostgresContainer[]>
-createDefaultPostgresContainer(options): Promise<PostgresContainer>
-execInContainer(containerId: string, args: string[]): Promise<ExecResult>
+inspectPostgresContainer(name: string, requestedAdminUser?: string): PostgresContainer
 ```
 
 ### `postgres.ts`
@@ -339,19 +342,8 @@ Example readiness command:
 docker exec <container> pg_isready -U <admin-user>
 ```
 
-Default shared container proposal:
-
-```bash
-docker run -d \
-  --name develop-utils-postgres \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=<generated-admin-password> \
-  -p 5432:5432 \
-  -v develop-utils-postgres-data:/var/lib/postgresql/data \
-  postgres:16
-```
-
-If host port `5432` is already in use, suggest another port instead of failing
+Container creation is intentionally unsupported. If the requested container is
+missing or stopped, the command reports that condition and exits without changes.
 blindly.
 
 ## Error Handling
@@ -465,52 +457,34 @@ Testing:
 
 - Unit tests for action collection and formatting.
 
-### Task 4: Docker Availability and Detection
+### Task 4: Docker Availability and Container Validation
 
 Context:
-The command starts by discovering usable local PostgreSQL containers.
+The command validates the existing PostgreSQL container named by the user.
 
 Implementation:
 
 - Implement Docker CLI check.
 - Implement daemon check with `docker info`.
-- Implement `findPostgresContainers`.
-- Parse image, name, ID, and ports.
+- Inspect its state, image, and environment.
 - Add `pg_isready` readiness check.
 
 Acceptance Criteria:
 
 - Docker missing and daemon stopped show separate messages.
-- Running PostgreSQL containers are listed.
-- Non-PostgreSQL containers are ignored.
+- A running compatible PostgreSQL container is accepted.
+- Missing, stopped, and incompatible containers fail without mutation.
 
 Testing:
 
 - Unit tests for `docker ps` parsing.
 - Integration test behind an opt-in Docker flag.
 
-### Task 5: Default Shared Container Creation
+### Task 5: Existing Container Validation
 
-Context:
-If no suitable container exists, MVP should offer to create one.
-
-Implementation:
-
-- Generate admin password.
-- Check port availability.
-- Run `docker run` with a stable container and volume name.
-- Wait for readiness.
-
-Acceptance Criteria:
-
-- User can create `develop-utils-postgres`.
-- Existing port conflict is reported before `docker run`.
-- `--dry-run` prints the Docker command without running it.
-
-Testing:
-
-- Unit test command construction.
-- Integration test creating and removing a disposable container.
+The implemented command checks Docker availability, inspects the requested
+container, validates its image and running state, resolves its admin role, and
+checks readiness with `pg_isready`. It never performs container lifecycle changes.
 
 ### Task 6: PostgreSQL Provisioning
 
@@ -614,9 +588,8 @@ Phase 1:
 
 Phase 2:
 
-- Docker detection
-- container selection
-- default container creation
+- Docker availability
+- existing-container validation
 
 Phase 3:
 
@@ -642,7 +615,7 @@ Unit tests:
 - project name normalization
 - database name generation
 - username generation
-- Docker `ps` output parsing
+- container state/image/admin-user validation
 - env file update behavior
 - dry-run action collection
 - SQL statement construction
@@ -650,7 +623,6 @@ Unit tests:
 Integration tests:
 
 - Docker available
-- create shared PostgreSQL container
 - create database
 - create user
 - connect with generated `DATABASE_URL`
@@ -665,7 +637,7 @@ DEVELOP_UTILS_DOCKER_TESTS=1 npm test
 
 ## Doctor Integration
 
-`npx develop-utils doctor` should eventually check:
+`devu doctor` should eventually check:
 
 - Docker CLI is installed
 - Docker daemon is reachable
@@ -678,21 +650,10 @@ DEVELOP_UTILS_DOCKER_TESTS=1 npm test
 Doctor should not create or mutate resources. It only reports status and next
 commands.
 
-## Final Recommendation
+## Current Delivery
 
-Build this feature, but keep the first PR small.
-
-Recommended first PR:
-
-- add `pg` command routing
-- add `pg init --dry-run`
-- add naming utilities
-- add dry-run action model
-- add unit tests for naming and dry-run output
-- add documentation for the shared-container model and safety warnings
-
-Do not include Docker mutation or PostgreSQL provisioning in the first PR. The
-second PR should add Docker detection and `pg list`. The third PR should add
-actual provisioning against an existing selected container. This keeps the
-feature reviewable and avoids mixing CLI architecture, Docker behavior, SQL
-permissions, and env-file writes in one change.
+`pg init` routing, preview, existing-container validation, idempotent role and
+database provisioning, grants, password handling, and safe env-file updates are
+implemented. Container creation remains deliberately unsupported. `pg list`,
+`pg status`, and `doctor` remain possible follow-up commands rather than part of
+`pg init` completion.
