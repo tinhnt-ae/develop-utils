@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/tinhnt-ae/develop-utils/compare/v1.2.0...v1.2.1) (2026-07-25)
+
+
+### Bug Fixes
+
+* adjust readme ([06dca9d](https://github.com/tinhnt-ae/develop-utils/commit/06dca9d14028b6dfe6ad4ea810e42240006d60a5))
+
 # [1.2.0](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.6...v1.2.0) (2026-07-25)
 
 
