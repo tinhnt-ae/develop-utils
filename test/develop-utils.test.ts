@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { runAddLicenses } from "../dist/commands/add-licenses/command.js";
 import { runAddSemanticRelease } from "../dist/commands/add-semantic-release/command.js";
+import { buildDatabaseName, buildUserName, normalizeProjectName } from "../dist/commands/pg/naming.js";
 import { runCommand } from "../dist/shared/process.js";
 
 async function tempRepo(prefix = "develop-utils-"): Promise<string> {
@@ -65,6 +66,49 @@ exit 1
   await writeFile(npmPath, script);
   await chmod(npmPath, 0o755);
   return `${binDir}:${process.env.PATH || ""}`;
+}
+
+async function fakeDockerBin(): Promise<{ logPath: string; path: string }> {
+  const binDir = await mkdtemp(path.join(tmpdir(), "develop-utils-fake-docker-"));
+  const logPath = path.join(binDir, "docker.log");
+  const script = `#!/bin/sh
+printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
+if [ "$1" = "info" ]; then
+  echo "26.1.0"
+  exit 0
+fi
+if [ "$1" = "inspect" ]; then
+  case "$3" in
+    *State.Status*) echo "running" ;;
+    *Config.Image*) echo "postgres:16" ;;
+    *) echo "POSTGRES_USER=postgres" ;;
+  esac
+  exit 0
+fi
+if [ "$1" = "exec" ] && [ "$3" = "pg_isready" ]; then
+  echo "accepting connections"
+  exit 0
+fi
+if [ "$1" = "exec" ] && [ "$3" = "psql" ]; then
+  sql=$(cat)
+  printf 'SQL %s\\n' "$sql" >> "$FAKE_DOCKER_LOG"
+  case "$sql" in
+    *"FROM pg_roles"*)
+      if [ "$FAKE_DOCKER_EXISTING" = "1" ]; then echo "\${FAKE_DOCKER_ROLE_STATE:-1|0|0|0}"; fi
+      ;;
+    *"FROM pg_database"*)
+      if [ "$FAKE_DOCKER_EXISTING" = "1" ]; then echo "$FAKE_DOCKER_DB_OWNER"; fi
+      ;;
+  esac
+  exit 0
+fi
+echo "unexpected docker command: $*" >&2
+exit 1
+`;
+  const dockerPath = path.join(binDir, "docker");
+  await writeFile(dockerPath, script);
+  await chmod(dockerPath, 0o755);
+  return { logPath, path: `${binDir}:${process.env.PATH || ""}` };
 }
 
 test("add-licenses derives owner and repository metadata from git config", async () => {
@@ -373,8 +417,175 @@ test("CLI help uses devu as the primary command", () => {
   });
 
   assert.match(output, /Usage: devu <command>/);
+  assert.match(output, /pg\s+Local PostgreSQL setup helpers/);
   assert.match(output, /develop-utils remains available as a long-form alias/);
   assert.doesNotMatch(output, /develope-utils/);
+});
+
+test("pg help shows available commands", () => {
+  const output = runCli(["pg", "--help"]);
+
+  assert.match(output, /Usage: devu pg <command>/);
+  assert.match(output, /init\s+Preview local PostgreSQL database provisioning/);
+});
+
+test("pg init dry-run prints planned PostgreSQL provisioning actions", async () => {
+  const dir = await tempRepo("develop-utils-pg-init-");
+  const envPath = path.join(dir, ".env.local");
+
+  const output = runCli(["pg", "init", dir, "--dry-run", "--project", "Story Audio", "--container", "local-postgres"]);
+
+  assert.match(output, /Project directory:/);
+  assert.match(output, /Project name: story_audio/);
+  assert.match(output, /Database name: story_audio_dev/);
+  assert.match(output, /Database user: story_audio_user/);
+  assert.match(output, /Container: local-postgres/);
+  assert.match(output, /Docker:/);
+  assert.match(output, /Inspect running PostgreSQL-compatible containers/);
+  assert.match(output, /PostgreSQL:/);
+  assert.match(output, /Provision database "story_audio_dev"/);
+  assert.match(output, /Grant "story_audio_user" ownership\/privileges/);
+  assert.match(output, /Files:/);
+  assert.match(output, /DATABASE_URL=postgresql:\/\/story_audio_user:\*\*\*\*\*\*@local-postgres:5432\/story_audio_dev/);
+  assert.match(output, /No Docker commands, SQL statements, or files were changed/);
+
+  await assert.rejects(
+    readFile(envPath, "utf8"),
+    /ENOENT/,
+  );
+});
+
+test("pg init can be cancelled before Docker or PostgreSQL changes", async () => {
+  const dir = await tempRepo("develop-utils-pg-init-required-");
+  const result = spawnSync(process.execPath, [
+    "dist/cli/develop-utils.js",
+    "pg",
+    "init",
+    dir,
+  ], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    encoding: "utf8",
+    input: "n\n",
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /PostgreSQL provisioning cancelled; nothing was changed/);
+});
+
+test("pg init provisions an isolated database in an existing container and writes DATABASE_URL", async () => {
+  const dir = await tempRepo("develop-utils-pg-provision-");
+  const fakeDocker = await fakeDockerBin();
+
+  const output = runCli([
+    "pg", "init", dir,
+    "--container", "shared-postgres",
+    "--project", "Story Audio",
+    "--password", "safe password",
+    "--yes",
+  ], "", {
+    PATH: fakeDocker.path,
+    FAKE_DOCKER_LOG: fakeDocker.logPath,
+  });
+
+  const env = await readFile(path.join(dir, ".env.local"), "utf8");
+  const dockerLog = await readFile(fakeDocker.logPath, "utf8");
+  assert.match(output, /Role: created/);
+  assert.match(output, /Database: created/);
+  assert.equal(env, "DATABASE_URL=postgresql://story_audio_user:safe%20password@shared-postgres:5432/story_audio_dev\n");
+  assert.match(dockerLog, /inspect --format .*State.Status.* shared-postgres/);
+  assert.match(dockerLog, /CREATE ROLE "story_audio_user" LOGIN PASSWORD 'safe password'/);
+  assert.match(dockerLog, /CREATE DATABASE "story_audio_dev" OWNER "story_audio_user"/);
+  assert.doesNotMatch(dockerLog, /docker run| run -d /);
+});
+
+test("pg init rerun reuses existing role and database without CREATE statements", async () => {
+  const dir = await tempRepo("develop-utils-pg-existing-");
+  const fakeDocker = await fakeDockerBin();
+
+  const output = runCli([
+    "pg", "init", dir,
+    "--container", "shared-postgres",
+    "--project", "existing-app",
+    "--password", "known-secret",
+    "--yes",
+  ], "", {
+    PATH: fakeDocker.path,
+    FAKE_DOCKER_LOG: fakeDocker.logPath,
+    FAKE_DOCKER_EXISTING: "1",
+    FAKE_DOCKER_DB_OWNER: "existing_app_user",
+  });
+
+  const dockerLog = await readFile(fakeDocker.logPath, "utf8");
+  assert.match(output, /Role: already existed/);
+  assert.match(output, /Database: already existed/);
+  assert.match(dockerLog, /ALTER ROLE/);
+  assert.doesNotMatch(dockerLog, /CREATE ROLE|CREATE DATABASE/);
+});
+
+test("pg init does not rotate an automatic password while preserving an existing DATABASE_URL", async () => {
+  const dir = await tempRepo("develop-utils-pg-env-safe-");
+  const fakeDocker = await fakeDockerBin();
+  const envPath = path.join(dir, ".env.local");
+  await writeFile(envPath, "OTHER=value\nDATABASE_URL=postgresql://old\n");
+
+  const result = spawnSync(process.execPath, [
+    "dist/cli/develop-utils.js", "pg", "init", dir, "--container", "shared-postgres", "--yes",
+  ], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: fakeDocker.path,
+      FAKE_DOCKER_LOG: fakeDocker.logPath,
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Use --yes --force to rotate the generated password/);
+  assert.equal(await readFile(envPath, "utf8"), "OTHER=value\nDATABASE_URL=postgresql://old\n");
+  await assert.rejects(readFile(fakeDocker.logPath, "utf8"), /ENOENT/);
+});
+
+test("pg init refuses to take over a database owned by another role", async () => {
+  const dir = await tempRepo("develop-utils-pg-owner-");
+  const fakeDocker = await fakeDockerBin();
+  const result = spawnSync(process.execPath, [
+    "dist/cli/develop-utils.js", "pg", "init", dir,
+    "--container", "shared-postgres", "--project", "isolated-app",
+    "--password", "known-secret", "--yes",
+  ], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: fakeDocker.path,
+      FAKE_DOCKER_LOG: fakeDocker.logPath,
+      FAKE_DOCKER_EXISTING: "1",
+      FAKE_DOCKER_DB_OWNER: "another_user",
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /owned by "another_user".*refusing to change its ownership or grants/);
+  const dockerLog = await readFile(fakeDocker.logPath, "utf8");
+  assert.doesNotMatch(dockerLog, /GRANT ALL|ALTER SCHEMA/);
+});
+
+test("PostgreSQL naming utilities build safe default identifiers", () => {
+  assert.equal(normalizeProjectName("ledgerbase"), "ledgerbase");
+  assert.equal(buildDatabaseName("ledgerbase"), "ledgerbase_dev");
+  assert.equal(buildUserName("ledgerbase"), "ledgerbase_user");
+  assert.equal(normalizeProjectName("Story Audio"), "story_audio");
+  assert.equal(buildDatabaseName("Story Audio"), "story_audio_dev");
+  assert.equal(buildUserName("Story Audio"), "story_audio_user");
+  assert.equal(normalizeProjectName("My---API!!!"), "my_api");
+  assert.equal(normalizeProjectName("123 --- !!!"), "project");
+
+  const longName = "Very Long Project Name ".repeat(5);
+  assert.equal(buildDatabaseName(longName).endsWith("_dev"), true);
+  assert.equal(buildUserName(longName).endsWith("_user"), true);
+  assert.ok(buildDatabaseName(longName).length <= 63);
+  assert.ok(buildUserName(longName).length <= 63);
 });
 
 test("runCommand supports inherited stdio commands", () => {

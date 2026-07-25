@@ -36,6 +36,7 @@
     "semantic-release",
     "repository",
     "setup",
+    "postgresql",
     "git"
   ],
   "devDependencies": {

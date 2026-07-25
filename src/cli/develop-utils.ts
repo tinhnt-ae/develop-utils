@@ -2,6 +2,7 @@
 
 import { help as licensesHelp, runAddLicenses } from "../commands/add-licenses/command.js";
 import { help as semanticReleaseHelp, runAddSemanticRelease } from "../commands/add-semantic-release/command.js";
+import { pgHelp, runPg } from "../commands/pg/command.js";
 import { closePrompts } from "../shared/prompts.js";
 
 function mainHelp(): string {
@@ -10,6 +11,7 @@ function mainHelp(): string {
 Commands:
   add-licenses          Create license/authorship files from git metadata.
   add-semantic-release  Add semantic-release setup to a repository.
+  pg                    Local PostgreSQL setup helpers.
 
 Run "devu <command> --help" for command-specific options.
 
@@ -34,6 +36,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "pg") {
+    await runPg(args);
+    return;
+  }
+
   if (command === "help:add-licenses") {
     console.log(licensesHelp());
     return;
@@ -41,6 +48,11 @@ async function main(): Promise<void> {
 
   if (command === "help:add-semantic-release") {
     console.log(semanticReleaseHelp());
+    return;
+  }
+
+  if (command === "help:pg") {
+    console.log(pgHelp());
     return;
   }
 

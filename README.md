@@ -24,6 +24,7 @@ npx --package devu-utils devu add-semantic-release
 ```bash
 devu add-licenses [project-dir] [--project-name name] [--dry-run]
 devu add-semantic-release [project-dir] [--mode auto|ci-npx|local-node] [--dry-run]
+devu pg init [project-dir] --container existing-postgres [--dry-run]
 ```
 
 Long-form and standalone bins are also available:
@@ -61,6 +62,20 @@ Type `y` or `n` and press Enter for each question.
 `add-semantic-release` supports `auto`, `local-node`, and `ci-npx` modes. It
 asks before writing release config or workflow files, and can optionally enable
 `@semantic-release/npm` for npm package publishing.
+
+`pg init` creates a project-specific database and role in an existing running
+PostgreSQL container. It never creates or starts containers. Preview first, then
+approve interactively or pass `--yes` for automation:
+
+```bash
+devu pg init ./story-audio --container shared-postgres --dry-run
+devu pg init ./story-audio --container shared-postgres
+```
+
+The generated `DATABASE_URL` uses the container name as its host so another
+container on the same Docker network can connect. Use `--host` when the project
+needs a different Docker service name or hostname. Existing `DATABASE_URL`
+values require confirmation; automation must use `--yes --force` to replace one.
 
 See:
 
