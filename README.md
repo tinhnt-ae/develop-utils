@@ -1,43 +1,100 @@
+# develop-utils
 
-# Develop-utils
-A small CLI for generating repeatable repository setup files 
-— licenses
-- authorship docs
-- line-ending policy
-- semantic-release workflows — with git-derived defaults and dry-run review before writing.
+`develop-utils` is a command-line toolkit for repeatable repository setup and
+local development tasks. The npm package is named `devu-utils`, and its primary
+command is `devu`.
 
-## Install
+Use it to:
+
+- generate license, copyright, authorship, and line-ending policy files;
+- add semantic-release configuration and CI workflows; and
+- provision a project-specific database and role in an existing PostgreSQL
+  Docker container.
+
+## Requirements
+
+- Node.js 22 or newer
+- Git for repository metadata and release setup
+- Docker only when using `devu pg init`
+
+## Recommended installation
+
+Install the package globally once so that `devu` is available from any
+directory:
 
 ```bash
-npm install -g devu-utils
+npm install --global devu-utils
 ```
 
-Or run without installing:
+Confirm that the command is available:
 
 ```bash
-npx --package devu-utils devu add-licenses
-npx --package devu-utils devu add-semantic-release
+devu --help
+```
+
+You can now run any command directly:
+
+```bash
+devu add-licenses --dry-run
+devu add-semantic-release --dry-run
+devu pg init --container existing-postgres --dry-run
+```
+
+To update a global installation later:
+
+```bash
+npm install --global devu-utils@latest
+```
+
+### Run without a global installation
+
+Use `npx` if you only need the tool once or do not want to install it globally:
+
+```bash
+npx --package devu-utils -- devu add-licenses --dry-run
+```
+
+> The package name is `devu-utils`, not `devu`. Installing a package named
+> `devu` will install a different package.
+
+## Quick start
+
+Run a preview from the repository you want to configure:
+
+```bash
+cd path/to/your-project
+devu add-licenses --dry-run
+```
+
+If the preview is correct, run the command without `--dry-run`. Commands ask
+for confirmation before creating or replacing protected files.
+
+```bash
+devu add-licenses
+```
+
+Pass a project directory when you do not want to change directories first:
+
+```bash
+devu add-licenses ./my-project --dry-run
 ```
 
 ## Commands
 
+### `devu add-licenses`
+
+Creates repository ownership and license files using metadata from Git:
+
+- `LICENSE`
+- `COPYRIGHT.md`
+- `AUTHORSHIP.md`
+- `.gitattributes`
+
 ```bash
 devu add-licenses [project-dir] [--project-name name] [--dry-run]
-devu add-semantic-release [project-dir] [--mode auto|ci-npx|local-node] [--dry-run]
-devu pg init [project-dir] --container existing-postgres [--dry-run]
 ```
 
-Long-form and standalone bins are also available:
-
-```bash
-develop-utils
-add-licenses
-add-semantic-release
-```
-
-## License Metadata
-
-`add-licenses` reads repository metadata dynamically:
+Metadata defaults:
 
 - owner name: `git config user.name`
 - owner email: `git config user.email`
@@ -45,59 +102,117 @@ add-semantic-release
 - GitHub username: parsed from the origin URL when possible
 - project start date: first commit date, falling back to today
 
-Environment overrides:
+Override identity values with environment variables when needed:
 
 ```bash
-DEVELOP_UTILS_FULL_NAME="Your Legal Name"
-DEVELOP_UTILS_EMAIL="you@example.com"
-DEVELOP_UTILS_GITHUB_USERNAME="your-github-user"
+DEVELOP_UTILS_FULL_NAME="Your Legal Name" \
+DEVELOP_UTILS_EMAIL="you@example.com" \
+DEVELOP_UTILS_GITHUB_USERNAME="your-github-user" \
+devu add-licenses --dry-run
 ```
 
-`add-licenses` asks before creating `COPYRIGHT.md`, `AUTHORSHIP.md`, and
-`.gitattributes`. If `LICENSE` already exists, it asks before overwriting it.
-Type `y` or `n` and press Enter for each question.
+### `devu add-semantic-release`
 
-## Semantic Release Modes
-
-`add-semantic-release` supports `auto`, `local-node`, and `ci-npx` modes. It
-asks before writing release config or workflow files, and can optionally enable
-`@semantic-release/npm` for npm package publishing.
-
-`pg init` creates a project-specific database and role in an existing running
-PostgreSQL container. It never creates or starts containers. Preview first, then
-approve interactively or pass `--yes` for automation:
+Adds semantic-release configuration and a workflow appropriate for the target
+repository.
 
 ```bash
-devu pg init ./story-audio --container shared-postgres --dry-run
+devu add-semantic-release [project-dir] \
+  [--mode auto|ci-npx|local-node] \
+  [--dry-run]
+```
+
+Available modes:
+
+- `auto`: use local dependencies for Node.js projects and CI/npx for other
+  projects;
+- `ci-npx`: language-independent setup that does not modify `package.json`;
+- `local-node`: install semantic-release dependencies in the target Node.js
+  project.
+
+The command asks before writing configuration or workflow files. For Node.js
+packages, it can also configure npm publishing with `@semantic-release/npm`.
+
+### `devu pg init`
+
+Creates an isolated database and role inside an existing, running PostgreSQL
+container. It never creates, starts, stops, or removes Docker containers.
+
+Preview the changes first:
+
+```bash
+devu pg init ./story-audio \
+  --container shared-postgres \
+  --dry-run
+```
+
+Then provision the database after reviewing the plan:
+
+```bash
 devu pg init ./story-audio --container shared-postgres
 ```
 
-The generated `DATABASE_URL` uses the container name as its host so another
-container on the same Docker network can connect. Use `--host` when the project
-needs a different Docker service name or hostname. Existing `DATABASE_URL`
-values require confirmation; automation must use `--yes --force` to replace one.
+The command writes `DATABASE_URL` to `.env.local` by default. The container
+name is used as the connection host so another container on the same Docker
+network can connect. Use `--host` for a different service name or hostname.
 
-See:
+Run the command-specific help to see database, user, password, host, and env
+file options:
+
+```bash
+devu pg init --help
+```
+
+## Help and command aliases
+
+Use built-in help for the current list of options:
+
+```bash
+devu --help
+devu add-licenses --help
+devu add-semantic-release --help
+devu pg init --help
+```
+
+`develop-utils` remains available as a long-form alias. The package also ships
+the standalone `add-licenses` and `add-semantic-release` commands, but `devu`
+is the recommended interface.
+
+## More documentation
 
 - [Semantic release setup](docs/semantic-release.md)
 - [npm publishing checklist](docs/npm-publishing.md)
 - [PostgreSQL provisioning plan](docs/postgres-provisioning-plan.md)
+- [Feature rationale and language support](FEATURE.md)
 
-## Why
+## Development
 
-See `FEATURE.md` for the longer rationale, pain points, and language support matrix.
+Install this repository locally as a global command while developing it:
 
-## License
+```bash
+npm install
+npm run build
+npm install --global .
+devu --help
+```
 
-MIT. See `LICENSE`.
+Run the automated tests and inspect the npm package contents before publishing:
+
+```bash
+npm test
+npm run pack:dry-run
+```
 
 ## Publishing
 
 ```bash
-cd develop-utils
 npm login
 npm publish --access public
 ```
 
-The package is prepared for public npm publishing. Actual publishing requires
-npm credentials and the package name to be available.
+The npm package is published as `devu-utils` and exposes `devu` as its primary
+command.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
