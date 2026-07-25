@@ -1,3 +1,26 @@
+## [1.1.6](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.5...v1.1.6) (2026-07-09)
+
+
+### Bug Fixes
+
+* update package documentation ([5ed5f9d](https://github.com/tinhnt-ae/develop-utils/commit/5ed5f9dcf0328b5b1e7c743fe232bd49946e8245))
+
+## [1.1.5](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.4...v1.1.5) (2026-07-09)
+
+
+### Bug Fixes
+
+* change docs and license for public repo ([cd4c2ef](https://github.com/tinhnt-ae/develop-utils/commit/cd4c2efae15e4384848c326c213978f68dacc861))
+
+## [1.1.4](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.3...v1.1.4) (2026-07-09)
+
+
+### Bug Fixes
+
+* adjust workflow config ([f76d1a2](https://github.com/tinhnt-ae/develop-utils/commit/f76d1a290bcdc7c13d1e2b77f472c9806d98e217))
+* update node version ([11e7630](https://github.com/tinhnt-ae/develop-utils/commit/11e763073a8a7875675caad5cb14fe8f9c309082))
+* update releaserc.json ([f9b03eb](https://github.com/tinhnt-ae/develop-utils/commit/f9b03eb06f8c528f9ec52694754f3cda0d420a6f))
+
 ## [1.1.3](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.2...v1.1.3) (2026-07-09)
 
 
