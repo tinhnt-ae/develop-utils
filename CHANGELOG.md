@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.6...v1.2.0) (2026-07-25)
+
+
+### Features
+
+* implement flow setting up pgsql database in the same container ([e37835b](https://github.com/tinhnt-ae/develop-utils/commit/e37835b80ea8c72c151ba2b497c09c4366ce09f2))
+
 ## [1.1.6](https://github.com/tinhnt-ae/develop-utils/compare/v1.1.5...v1.1.6) (2026-07-09)
 
 
