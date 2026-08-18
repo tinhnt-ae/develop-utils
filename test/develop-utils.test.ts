@@ -6,6 +6,8 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
+import { runAiSessionsClean } from "../dist/commands/ai-sessions/clean.js";
+import { runAiSessionsList } from "../dist/commands/ai-sessions/list.js";
 import { runAddLicenses } from "../dist/commands/add-licenses/command.js";
 import { runAddSemanticRelease } from "../dist/commands/add-semantic-release/command.js";
 import { assertReleaseWorkflowGate, bitbucketWorkflow, githubWorkflow, gitlabWorkflow } from "../dist/commands/add-semantic-release/workflows.js";
@@ -1177,4 +1179,84 @@ test("node-cleanup clean refuses to scan the filesystem root or the home directo
 
 test("node-cleanup list requires --root", async () => {
   assert.throws(() => runCli(["node-cleanup", "list"]), /--root is required/);
+});
+
+async function aiSessionFixture(
+  home: string,
+  projectDir: string,
+  sessionId: string,
+  mtimeIso: string,
+): Promise<string> {
+  const dir = path.join(home, ".claude", "projects", projectDir);
+  await mkdir(dir, { recursive: true });
+  const filePath = path.join(dir, `${sessionId}.jsonl`);
+  await writeFile(filePath, "{\"line\":1}\n");
+  const mtime = new Date(mtimeIso);
+  await utimes(filePath, mtime, mtime);
+  return filePath;
+}
+
+test("ai-sessions list flags a stale session and leaves a fresh one alone", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-ai-sessions-"));
+  await aiSessionFixture(home, "proj-a", "session-old", "2000-01-01T00:00:00Z");
+  await aiSessionFixture(home, "proj-b", "session-fresh", new Date().toISOString());
+
+  const output = await captureLog(() => runAiSessionsList(["--older-than-days", "30"], { home }));
+
+  assert.match(output, /proj-a\/session-old\t.*\(STALE\)/);
+  assert.doesNotMatch(output, /proj-b\/session-fresh\t.*\(STALE\)/);
+});
+
+test("ai-sessions list filters sessions by --project", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-ai-sessions-"));
+  await aiSessionFixture(home, "proj-a", "session-1", "2000-01-01T00:00:00Z");
+  await aiSessionFixture(home, "proj-b", "session-2", "2000-01-01T00:00:00Z");
+
+  const output = await captureLog(() => runAiSessionsList(["--project", "proj-a"], { home }));
+
+  assert.match(output, /proj-a\/session-1/);
+  assert.doesNotMatch(output, /proj-b\/session-2/);
+});
+
+test("ai-sessions list reports when the home directory has no sessions", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-ai-sessions-empty-"));
+
+  const output = await captureLog(() => runAiSessionsList([], { home }));
+
+  assert.match(output, /No AI agent sessions found\./);
+});
+
+test("ai-sessions clean --dry-run prints the plan without deleting session files", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-ai-sessions-"));
+  const stalePath = await aiSessionFixture(home, "proj-a", "session-old", "2000-01-01T00:00:00Z");
+
+  const output = await captureLog(() => runAiSessionsClean(["--older-than-days", "30", "--dry-run"], { home }));
+
+  assert.match(output, /DRY RUN AI session cleanup plan:/);
+  assert.match(output, /No sessions were deleted\./);
+  await assert.doesNotReject(stat(stalePath));
+});
+
+test("ai-sessions clean --yes deletes stale sessions but leaves fresh sessions and other files untouched", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-ai-sessions-"));
+  const stalePath = await aiSessionFixture(home, "proj-a", "session-old", "2000-01-01T00:00:00Z");
+  const freshPath = await aiSessionFixture(home, "proj-b", "session-fresh", new Date().toISOString());
+  const settingsPath = path.join(home, ".claude", "settings.json");
+  await writeFile(settingsPath, "{}\n");
+
+  const output = await captureLog(() => runAiSessionsClean(["--older-than-days", "30", "--yes"], { home }));
+
+  assert.match(output, /Deleted 1 session file\(s\), reclaiming/);
+  await assert.rejects(stat(stalePath), /ENOENT/);
+  await assert.doesNotReject(stat(freshPath));
+  await assert.doesNotReject(stat(settingsPath));
+});
+
+test("ai-sessions clean reports nothing to do when no sessions are stale", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-ai-sessions-"));
+  await aiSessionFixture(home, "proj-a", "session-fresh", new Date().toISOString());
+
+  const output = await captureLog(() => runAiSessionsClean(["--older-than-days", "30", "--yes"], { home }));
+
+  assert.match(output, /No stale AI agent sessions found\./);
 });

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { aiSessionsHelp, runAiSessions } from "../commands/ai-sessions/command.js";
 import { help as licensesHelp, runAddLicenses } from "../commands/add-licenses/command.js";
 import { help as semanticReleaseHelp, runAddSemanticRelease } from "../commands/add-semantic-release/command.js";
 import { gitBranchesHelp, runGitBranches } from "../commands/git-branches/command.js";
@@ -18,6 +19,7 @@ Commands:
   git-branches          List, clean up, and sync outdated local git branches.
   ports                 Find and stop the process listening on a TCP port.
   node-cleanup          List and delete stale node_modules directories.
+  ai-sessions           List and delete stale AI agent session files.
 
 Run "devu <command> --help" for command-specific options.
 
@@ -62,6 +64,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "ai-sessions") {
+    await runAiSessions(args);
+    return;
+  }
+
   if (command === "help:add-licenses") {
     console.log(licensesHelp());
     return;
@@ -89,6 +96,11 @@ async function main(): Promise<void> {
 
   if (command === "help:node-cleanup") {
     console.log(nodeCleanupHelp());
+    return;
+  }
+
+  if (command === "help:ai-sessions") {
+    console.log(aiSessionsHelp());
     return;
   }
 

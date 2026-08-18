@@ -11,8 +11,9 @@ Use it to:
 - provision a project-specific database and role in an existing PostgreSQL
   Docker container;
 - list, clean up, and sync outdated local git branches;
-- find and stop the process listening on a TCP port; and
-- list and delete stale `node_modules` directories to reclaim disk space.
+- find and stop the process listening on a TCP port;
+- list and delete stale `node_modules` directories to reclaim disk space; and
+- list and delete stale AI agent session transcripts.
 
 ## Requirements
 
@@ -45,6 +46,7 @@ devu pg init --container existing-postgres --dry-run
 devu git-branches list
 devu ports list --port 3000
 devu node-cleanup list --root ~/projects
+devu ai-sessions list
 ```
 
 To update a global installation later:
@@ -260,6 +262,34 @@ devu node-cleanup clean --root ~/projects
 `--root` is required (no implicit whole-disk scan), and the command refuses
 to scan the filesystem root or your home directory directly.
 
+### `devu ai-sessions`
+
+Lists and deletes stale AI agent session transcripts. Today this covers
+Claude Code session files under `~/.claude/projects`; only files matching
+that discovered-session pattern are ever touched, so other files in
+`~/.claude` (`settings.json`, `CLAUDE.md`, etc.) are never affected.
+
+```bash
+devu ai-sessions list [--older-than-days 30] [--project name]
+devu ai-sessions clean [--older-than-days 30] [--project name] [--dry-run] [--yes]
+```
+
+Preview before deleting anything:
+
+```bash
+devu ai-sessions clean --dry-run
+```
+
+Then delete after reviewing the plan and the total reclaimable size; the
+command asks for confirmation unless `--yes` is passed:
+
+```bash
+devu ai-sessions clean
+```
+
+A session is flagged stale when its file has not been modified in
+`--older-than-days`, which naturally excludes any currently active session.
+
 ## Help and command aliases
 
 Use built-in help for the current list of options:
@@ -276,6 +306,8 @@ devu ports list --help
 devu ports kill --help
 devu node-cleanup list --help
 devu node-cleanup clean --help
+devu ai-sessions list --help
+devu ai-sessions clean --help
 ```
 
 `develop-utils` remains available as a long-form alias. The package also ships

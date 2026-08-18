@@ -1,7 +1,8 @@
 import path from "node:path";
+import { formatBytes } from "../../shared/bytes.js";
 import { formatDate, isOlderThanDays } from "../../shared/dates.js";
 import { findNodeModulesCandidates } from "./finder.js";
-import { directorySizeBytes, formatBytes } from "./size.js";
+import { directorySizeBytes } from "./size.js";
 
 interface NodeCleanupListOptions {
   help: boolean;

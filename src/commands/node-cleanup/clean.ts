@@ -1,12 +1,13 @@
 import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { formatBytes } from "../../shared/bytes.js";
 import { formatDate, isOlderThanDays } from "../../shared/dates.js";
 import { type PlannedAction, printPlannedActions } from "../../shared/plan.js";
 import { confirmAction } from "../../shared/prompts.js";
 import { findNodeModulesCandidates } from "./finder.js";
 import { requireRoot } from "./list.js";
-import { directorySizeBytes, formatBytes } from "./size.js";
+import { directorySizeBytes } from "./size.js";
 
 interface NodeCleanupCleanOptions {
   dryRun: boolean;
