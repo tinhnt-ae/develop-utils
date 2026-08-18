@@ -29,16 +29,22 @@ framework or keep `develop-utils` as a runtime dependency.
   reclaim disk space.
 - `ai-sessions` lists and deletes stale AI agent session transcripts
   (currently Claude Code sessions under `~/.claude/projects`).
+- `java-cleanup jdks` lists and deletes old JDKs installed via sdkman, jenv,
+  or jabba. `java-cleanup builds` lists and deletes stale Maven/Gradle
+  build output directories.
 
 ## Safety Convention
 
 Commands that can mutate or delete state (`pg init`, `git-branches clean`,
-`ports kill`, `node-cleanup clean`, `ai-sessions clean`) follow the same
+`ports kill`, `node-cleanup clean`, `ai-sessions clean`,
+`java-cleanup jdks clean`, `java-cleanup builds clean`) follow the same
 shape: build a plan, print it under `--dry-run` without touching anything,
 confirm interactively before mutating, and support `--yes` to skip the
 prompt. The single most destructive option per command additionally
 requires `--force`: overwriting an existing `DATABASE_URL`, deleting a
-not-fully-merged branch, or sending `SIGKILL` instead of `SIGTERM`.
+not-fully-merged branch, sending `SIGKILL` instead of `SIGTERM`, or
+proceeding with `java-cleanup jdks clean` when the active JDK version could
+not be determined.
 
 ## Language Support
 

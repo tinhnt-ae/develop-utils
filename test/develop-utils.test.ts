@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmod, mkdtemp, mkdir, readFile, stat, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
@@ -11,6 +11,8 @@ import { runAiSessionsList } from "../dist/commands/ai-sessions/list.js";
 import { runAddLicenses } from "../dist/commands/add-licenses/command.js";
 import { runAddSemanticRelease } from "../dist/commands/add-semantic-release/command.js";
 import { assertReleaseWorkflowGate, bitbucketWorkflow, githubWorkflow, gitlabWorkflow } from "../dist/commands/add-semantic-release/workflows.js";
+import { runJdkClean } from "../dist/commands/java-cleanup/jdk-clean.js";
+import { runJdkList } from "../dist/commands/java-cleanup/jdk-list.js";
 import { buildDatabaseName, buildUserName, normalizeProjectName } from "../dist/commands/pg/naming.js";
 import { runPgInit } from "../dist/commands/pg/init.js";
 import { runPortsKill } from "../dist/commands/ports/kill.js";
@@ -1259,4 +1261,163 @@ test("ai-sessions clean reports nothing to do when no sessions are stale", async
   const output = await captureLog(() => runAiSessionsClean(["--older-than-days", "30", "--yes"], { home }));
 
   assert.match(output, /No stale AI agent sessions found\./);
+});
+
+async function sdkmanFixture(home: string, versions: string[], active?: string): Promise<string> {
+  const root = path.join(home, ".sdkman", "candidates", "java");
+  for (const version of versions) {
+    await mkdir(path.join(root, version), { recursive: true });
+  }
+  if (active) {
+    await symlink(active, path.join(root, "current"));
+  }
+  return root;
+}
+
+test("java-cleanup jdks list shows installed JDKs and marks the active one", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-jdks-"));
+  await sdkmanFixture(home, ["17.0.9-tem", "21.0.1-tem"], "21.0.1-tem");
+
+  const output = await captureLog(() => runJdkList([], { home }));
+
+  assert.match(output, /Manager: sdkman/);
+  assert.match(output, /Active version: 21\.0\.1-tem/);
+  assert.match(output, /21\.0\.1-tem \(active\)/);
+  assert.doesNotMatch(output, /17\.0\.9-tem \(active\)/);
+});
+
+test("java-cleanup jdks clean deletes non-active JDKs but keeps the active one", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-jdks-"));
+  const root = await sdkmanFixture(home, ["17.0.9-tem", "21.0.1-tem"], "21.0.1-tem");
+
+  const output = await captureLog(() => runJdkClean(["--yes"], { home }));
+
+  assert.match(output, /Deleted 1 JDK\(s\): 17\.0\.9-tem\./);
+  await assert.rejects(stat(path.join(root, "17.0.9-tem")), /ENOENT/);
+  await assert.doesNotReject(stat(path.join(root, "21.0.1-tem")));
+});
+
+test("java-cleanup jdks clean --dry-run does not delete anything", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-jdks-"));
+  const root = await sdkmanFixture(home, ["17.0.9-tem", "21.0.1-tem"], "21.0.1-tem");
+
+  const output = await captureLog(() => runJdkClean(["--dry-run"], { home }));
+
+  assert.match(output, /DRY RUN JDK cleanup plan:/);
+  await assert.doesNotReject(stat(path.join(root, "17.0.9-tem")));
+});
+
+test("java-cleanup jdks clean respects --keep", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-jdks-"));
+  const root = await sdkmanFixture(home, ["11.0.2-tem", "17.0.9-tem", "21.0.1-tem"], "21.0.1-tem");
+
+  await runJdkClean(["--yes", "--keep", "11.0.2-tem"], { home });
+
+  await assert.doesNotReject(stat(path.join(root, "11.0.2-tem")));
+  await assert.rejects(stat(path.join(root, "17.0.9-tem")), /ENOENT/);
+  await assert.doesNotReject(stat(path.join(root, "21.0.1-tem")));
+});
+
+test("java-cleanup jdks clean requires --force when the active version cannot be determined", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-jdks-"));
+  await sdkmanFixture(home, ["17.0.9-tem", "21.0.1-tem"]);
+
+  await assert.rejects(runJdkClean(["--yes"], { home }), /Could not determine the active sdkman version/);
+});
+
+test("java-cleanup jdks throws when multiple managers are found, and --manager disambiguates", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-jdks-"));
+  await sdkmanFixture(home, ["21.0.1-tem"], "21.0.1-tem");
+  await mkdir(path.join(home, ".jenv", "versions", "17.0"), { recursive: true });
+
+  await assert.rejects(runJdkList([], { home }), /Multiple Java version managers found/);
+
+  const output = await captureLog(() => runJdkList(["--manager", "jenv"], { home }));
+  assert.match(output, /Manager: jenv/);
+});
+
+test("java-cleanup jdks throws when no manager is found", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "develop-utils-jdks-empty-"));
+
+  await assert.rejects(runJdkList([], { home }), /No supported Java version manager found/);
+});
+
+async function buildProjectFixture(
+  root: string,
+  name: string,
+  buildTool: "gradle" | "maven",
+  mtimeIso: string,
+): Promise<{ buildOutputPath: string; projectDir: string }> {
+  const projectDir = path.join(root, name);
+  const outputDirName = buildTool === "maven" ? "target" : "build";
+  const buildOutputPath = path.join(projectDir, outputDirName);
+  await mkdir(buildOutputPath, { recursive: true });
+  const markerFile = buildTool === "maven" ? "pom.xml" : "build.gradle";
+  await writeFile(path.join(projectDir, markerFile), "");
+  await writeFile(path.join(buildOutputPath, "marker"), "x");
+
+  const mtime = new Date(mtimeIso);
+  await utimes(buildOutputPath, mtime, mtime);
+
+  return { buildOutputPath, projectDir };
+}
+
+test("java-cleanup builds list flags a stale maven output dir and leaves a fresh gradle one alone", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "develop-utils-builds-"));
+  await buildProjectFixture(root, "maven-project", "maven", "2000-01-01T00:00:00Z");
+  await buildProjectFixture(root, "gradle-project", "gradle", new Date().toISOString());
+
+  const output = runCli(["java-cleanup", "builds", "list", "--root", root, "--older-than-days", "14"]);
+
+  assert.match(output, /maven-project\tmaven\t.*\(STALE\)/);
+  assert.doesNotMatch(output, /gradle-project\tgradle\t.*\(STALE\)/);
+});
+
+test("java-cleanup builds list ignores a build directory without a sibling pom.xml or build.gradle", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "develop-utils-builds-"));
+  await mkdir(path.join(root, "not-a-build-project", "build"), { recursive: true });
+
+  const output = runCli(["java-cleanup", "builds", "list", "--root", root]);
+
+  assert.match(output, /No Maven\/Gradle build output directories found\./);
+});
+
+test("java-cleanup builds clean --dry-run prints the plan without deleting", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "develop-utils-builds-"));
+  const { buildOutputPath } = await buildProjectFixture(root, "maven-project", "maven", "2000-01-01T00:00:00Z");
+
+  const output = runCli(["java-cleanup", "builds", "clean", "--root", root, "--older-than-days", "14", "--dry-run"]);
+
+  assert.match(output, /DRY RUN build output cleanup plan:/);
+  await assert.doesNotReject(stat(buildOutputPath));
+});
+
+test("java-cleanup builds clean --yes deletes stale build output but leaves fresh output", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "develop-utils-builds-"));
+  const stale = await buildProjectFixture(root, "maven-project", "maven", "2000-01-01T00:00:00Z");
+  const fresh = await buildProjectFixture(root, "gradle-project", "gradle", new Date().toISOString());
+
+  const output = runCli(["java-cleanup", "builds", "clean", "--root", root, "--older-than-days", "14", "--yes"]);
+
+  assert.match(output, /Deleted 1 build output director/);
+  await assert.rejects(stat(stale.buildOutputPath), /ENOENT/);
+  await assert.doesNotReject(stat(fresh.buildOutputPath));
+});
+
+test("java-cleanup builds clean skips a project with uncommitted git changes", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "develop-utils-builds-"));
+  const { buildOutputPath, projectDir } = await buildProjectFixture(root, "maven-project", "maven", "2000-01-01T00:00:00Z");
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: projectDir });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: projectDir });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: projectDir });
+  await writeFile(path.join(projectDir, "dirty.txt"), "uncommitted\n");
+
+  const output = runCli(["java-cleanup", "builds", "clean", "--root", root, "--older-than-days", "14", "--yes"]);
+
+  assert.match(output, /uncommitted changes/);
+  await assert.doesNotReject(stat(buildOutputPath));
+});
+
+test("java-cleanup builds list requires --root", async () => {
+  assert.throws(() => runCli(["java-cleanup", "builds", "list"]), /--root is required/);
 });

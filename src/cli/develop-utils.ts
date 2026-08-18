@@ -4,6 +4,7 @@ import { aiSessionsHelp, runAiSessions } from "../commands/ai-sessions/command.j
 import { help as licensesHelp, runAddLicenses } from "../commands/add-licenses/command.js";
 import { help as semanticReleaseHelp, runAddSemanticRelease } from "../commands/add-semantic-release/command.js";
 import { gitBranchesHelp, runGitBranches } from "../commands/git-branches/command.js";
+import { javaCleanupHelp, runJavaCleanup } from "../commands/java-cleanup/command.js";
 import { nodeCleanupHelp, runNodeCleanup } from "../commands/node-cleanup/command.js";
 import { pgHelp, runPg } from "../commands/pg/command.js";
 import { portsHelp, runPorts } from "../commands/ports/command.js";
@@ -20,6 +21,7 @@ Commands:
   ports                 Find and stop the process listening on a TCP port.
   node-cleanup          List and delete stale node_modules directories.
   ai-sessions           List and delete stale AI agent session files.
+  java-cleanup          List and delete stale JDKs and Maven/Gradle build output.
 
 Run "devu <command> --help" for command-specific options.
 
@@ -69,6 +71,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "java-cleanup") {
+    await runJavaCleanup(args);
+    return;
+  }
+
   if (command === "help:add-licenses") {
     console.log(licensesHelp());
     return;
@@ -101,6 +108,11 @@ async function main(): Promise<void> {
 
   if (command === "help:ai-sessions") {
     console.log(aiSessionsHelp());
+    return;
+  }
+
+  if (command === "help:java-cleanup") {
+    console.log(javaCleanupHelp());
     return;
   }
 

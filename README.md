@@ -12,8 +12,9 @@ Use it to:
   Docker container;
 - list, clean up, and sync outdated local git branches;
 - find and stop the process listening on a TCP port;
-- list and delete stale `node_modules` directories to reclaim disk space; and
-- list and delete stale AI agent session transcripts.
+- list and delete stale `node_modules` directories to reclaim disk space;
+- list and delete stale AI agent session transcripts; and
+- list and delete old JDKs and stale Maven/Gradle build output.
 
 ## Requirements
 
@@ -21,6 +22,8 @@ Use it to:
 - Git for repository metadata and release setup
 - Docker only when using `devu pg init`
 - `lsof` (macOS/Linux) or `netstat` (Windows) only when using `devu ports`
+- sdkman, jenv, or jabba only when using `devu java-cleanup jdks`
+  (not supported on Windows yet)
 
 ## Recommended installation
 
@@ -47,6 +50,7 @@ devu git-branches list
 devu ports list --port 3000
 devu node-cleanup list --root ~/projects
 devu ai-sessions list
+devu java-cleanup jdks list
 ```
 
 To update a global installation later:
@@ -290,6 +294,54 @@ devu ai-sessions clean
 A session is flagged stale when its file has not been modified in
 `--older-than-days`, which naturally excludes any currently active session.
 
+### `devu java-cleanup`
+
+Two independent cleanup areas: installed JDKs, and per-project Maven/Gradle
+build output.
+
+```bash
+devu java-cleanup jdks list [--manager sdkman|jenv|jabba]
+devu java-cleanup jdks clean [--manager sdkman|jenv|jabba] [--keep version] [--dry-run] [--yes] [--force]
+
+devu java-cleanup builds list --root dir [--older-than-days 14]
+devu java-cleanup builds clean --root dir [--older-than-days 14] [--dry-run] [--yes]
+```
+
+`jdks` auto-detects sdkman, jenv, or jabba (pass `--manager` if more than one
+is installed), lists installed versions, and flags the active one:
+
+```bash
+devu java-cleanup jdks list
+```
+
+`jdks clean` deletes every installed version except the active one and
+anything passed via `--keep`; the active version is never deleted, even
+with `--force`. If the active version can't be determined, `clean` refuses
+to run unless `--force` is passed:
+
+```bash
+devu java-cleanup jdks clean --keep 17.0.9-tem --dry-run
+devu java-cleanup jdks clean --keep 17.0.9-tem
+```
+
+`builds` finds Maven (`pom.xml` + `target/`) and Gradle (`build.gradle*` +
+`build/`) output directories under `--root` and flags ones whose output (and,
+for a git project, last commit) are older than `--older-than-days`:
+
+```bash
+devu java-cleanup builds clean --root ~/projects --dry-run
+devu java-cleanup builds clean --root ~/projects
+```
+
+`builds clean` skips (with a warning, not silently) any project with
+uncommitted git changes rather than deleting its build output.
+
+See the [Java cleanup design](docs/java-cleanup-plan.md) for the full
+detection rules and safety rationale — this is the highest-risk command in
+the CLI, and its JDK manager integrations could only be tested against
+fabricated fixtures rather than real sdkman/jenv/jabba installs, so prefer
+running `jdks list` first to sanity-check the detected active version.
+
 ## Help and command aliases
 
 Use built-in help for the current list of options:
@@ -308,6 +360,10 @@ devu node-cleanup list --help
 devu node-cleanup clean --help
 devu ai-sessions list --help
 devu ai-sessions clean --help
+devu java-cleanup jdks list --help
+devu java-cleanup jdks clean --help
+devu java-cleanup builds list --help
+devu java-cleanup builds clean --help
 ```
 
 `develop-utils` remains available as a long-form alias. The package also ships
@@ -320,6 +376,7 @@ is the recommended interface.
 - [npm publishing checklist](docs/npm-publishing.md)
 - [PostgreSQL provisioning plan](docs/postgres-provisioning-plan.md)
 - [Git branch cleanup design](docs/git-branches-plan.md)
+- [Java cleanup design](docs/java-cleanup-plan.md)
 - [Feature rationale and language support](FEATURE.md)
 
 ## Development
