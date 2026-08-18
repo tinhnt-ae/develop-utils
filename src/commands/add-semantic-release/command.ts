@@ -237,9 +237,7 @@ async function writeOrPreview(
 
   if (dryRun) {
     console.log(`DRY RUN write: ${target}`);
-    if (fileName === ".releaserc.json") {
-      console.log(content.trimEnd());
-    }
+    console.log(content.trimEnd());
     return;
   }
 

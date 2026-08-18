@@ -5,14 +5,30 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  id-token: write
-
 jobs:
+  validation:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run pack:dry-run
+
   release:
+    needs: validation
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

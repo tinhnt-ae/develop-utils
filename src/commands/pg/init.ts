@@ -4,7 +4,12 @@ import { inspectPostgresContainer } from "./docker.js";
 import { buildDatabaseName, buildUserName, normalizeProjectName } from "./naming.js";
 import { printPlannedActions, type PlannedAction } from "./dry-run.js";
 import { hasDatabaseUrl, writeDatabaseUrl } from "./env-file.js";
-import { provisionPostgres } from "./postgres.js";
+import {
+  buildPostgresProvisioningPlan,
+  executePostgresProvisioning,
+  inspectPostgres,
+  verifyPostgresProvisioning,
+} from "./postgres.js";
 import { confirmAction } from "../../shared/prompts.js";
 
 interface PgInitOptions {
@@ -161,7 +166,11 @@ function buildDatabaseUrl(user: string, password: string, host: string, database
   return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:5432/${encodeURIComponent(database)}`;
 }
 
-export async function runPgInit(argv = process.argv.slice(2)): Promise<void> {
+interface PgInitDependencies {
+  generatePassword?: () => string;
+}
+
+export async function runPgInit(argv = process.argv.slice(2), dependencies: PgInitDependencies = {}): Promise<void> {
   const options = parsePgInitArgs(argv);
 
   if (options.help) {
@@ -217,11 +226,6 @@ export async function runPgInit(argv = process.argv.slice(2)): Promise<void> {
     return;
   }
 
-  if (!options.yes && !await confirmAction(`Provision database "${databaseName}" and role "${userName}" in container "${options.container}"?`)) {
-    console.log("PostgreSQL provisioning cancelled; nothing was changed.");
-    return;
-  }
-
   const existingDatabaseUrl = await hasDatabaseUrl(envPath);
   let shouldWrite = false;
   if (options.yes) {
@@ -229,7 +233,24 @@ export async function runPgInit(argv = process.argv.slice(2)): Promise<void> {
     if (existingDatabaseUrl && !options.force && options.password === "auto") {
       throw new Error(`DATABASE_URL already exists in ${envPath}. Use --yes --force to rotate the generated password, or provide --password to leave the file unchanged.`);
     }
-  } else {
+  }
+
+  const container = inspectPostgresContainer(options.container, options.adminUser);
+  const target = {
+    adminUser: container.adminUser,
+    container: container.name,
+    database: databaseName,
+    user: userName,
+  };
+  const inspection = inspectPostgres(target);
+  const plan = buildPostgresProvisioningPlan(target, inspection);
+
+  if (!options.yes && !await confirmAction(`Provision database "${databaseName}" and role "${userName}" in container "${options.container}"?`)) {
+    console.log("PostgreSQL provisioning cancelled; nothing was changed.");
+    return;
+  }
+
+  if (!options.yes) {
     const action = existingDatabaseUrl ? "Overwrite existing DATABASE_URL in" : "Write DATABASE_URL to";
     shouldWrite = await confirmAction(`${action} ${envPath}?`);
     if (!shouldWrite && options.password === "auto") {
@@ -238,25 +259,24 @@ export async function runPgInit(argv = process.argv.slice(2)): Promise<void> {
     }
   }
 
-  const container = inspectPostgresContainer(options.container, options.adminUser);
-  const password = options.password === "auto" ? randomBytes(24).toString("base64url") : options.password;
-  const result = provisionPostgres({
-    adminUser: container.adminUser,
-    container: container.name,
-    database: databaseName,
-    password,
-    user: userName,
-  });
+  const password = options.password === "auto"
+    ? (dependencies.generatePassword || (() => randomBytes(24).toString("base64url")))()
+    : options.password;
+  const result = executePostgresProvisioning(plan, password);
+  verifyPostgresProvisioning(target);
   const databaseUrl = buildDatabaseUrl(userName, password, host, databaseName);
+  const redactedUrl = buildDatabaseUrl(userName, "***", host, databaseName);
 
+  console.log("PostgreSQL provisioning completed");
+  console.log(`Container: ${container.name}`);
   console.log(`Role: ${result.roleCreated ? "created" : "already existed"}`);
   console.log(`Database: ${result.databaseCreated ? "created" : "already existed"}`);
-  console.log(`DATABASE_URL=${databaseUrl}`);
 
   if (shouldWrite) {
     const update = await writeDatabaseUrl(envPath, databaseUrl);
-    console.log(`Environment file ${update}: ${envPath}`);
+    console.log(`Credentials written to: ${envPath} (${update})`);
   } else {
     console.log(`Environment file unchanged: ${envPath}`);
   }
+  console.log(`Connection: ${redactedUrl}`);
 }
