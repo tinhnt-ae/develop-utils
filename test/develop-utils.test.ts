@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { chmod, mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 import { runAddLicenses } from "../dist/commands/add-licenses/command.js";
 import { runAddSemanticRelease } from "../dist/commands/add-semantic-release/command.js";
 import { assertReleaseWorkflowGate, bitbucketWorkflow, githubWorkflow, gitlabWorkflow } from "../dist/commands/add-semantic-release/workflows.js";
 import { buildDatabaseName, buildUserName, normalizeProjectName } from "../dist/commands/pg/naming.js";
 import { runPgInit } from "../dist/commands/pg/init.js";
+import { runPortsKill } from "../dist/commands/ports/kill.js";
+import { runPortsList } from "../dist/commands/ports/list.js";
 import { runCommand } from "../dist/shared/process.js";
 
 async function tempRepo(prefix = "develop-utils-"): Promise<string> {
@@ -953,4 +957,163 @@ test("git-branches list rejects a directory that is not a git repository", async
   const dir = await mkdtemp(path.join(tmpdir(), "develop-utils-branches-nongit-"));
 
   assert.throws(() => runCli(["git-branches", "list", dir]), /is not a git repository/);
+});
+
+async function captureLog(run: () => Promise<void>): Promise<string> {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  console.log = (...values: unknown[]) => lines.push(values.join(" "));
+  try {
+    await run();
+  } finally {
+    console.log = originalLog;
+  }
+  return lines.join("\n");
+}
+
+test("ports list prints discovered processes via injected lookup", async () => {
+  const output = await captureLog(() => runPortsList(["--port", "4000"], {
+    findProcesses: (port) => {
+      assert.equal(port, 4000);
+      return [{ command: "node", pid: 4242 }];
+    },
+  }));
+
+  assert.match(output, /Port 4000:/);
+  assert.match(output, /pid 4242 \(node\)/);
+});
+
+test("ports list reports when no process is found", async () => {
+  const output = await captureLog(() => runPortsList(["--port", "4000"], {
+    findProcesses: () => [],
+  }));
+
+  assert.match(output, /No process is listening on port 4000\./);
+});
+
+test("ports kill --dry-run prints the plan without signaling processes", async () => {
+  let killed = false;
+  const output = await captureLog(() => runPortsKill(["--port", "4000", "--dry-run"], {
+    findProcesses: () => [{ command: "node", pid: 4242 }],
+    killProcess: () => {
+      killed = true;
+    },
+  }));
+
+  assert.match(output, /DRY RUN: would send SIGTERM/);
+  assert.equal(killed, false);
+});
+
+test("ports kill --yes signals matching processes and escalates to SIGKILL with --force", async () => {
+  const signals: string[] = [];
+  const output = await captureLog(() => runPortsKill(["--port", "4000", "--yes", "--force"], {
+    findProcesses: () => [{ command: "node", pid: 4242 }],
+    killProcess: (_pid, signal) => {
+      signals.push(signal);
+    },
+  }));
+
+  assert.deepEqual(signals, ["SIGKILL"]);
+  assert.match(output, /Signaled 1 of 1 process\(es\) with SIGKILL\./);
+});
+
+test("ports kill never signals pid 1 or the CLI's own process", async () => {
+  const signaledPids: number[] = [];
+  const output = await captureLog(() => runPortsKill(["--port", "4000", "--yes"], {
+    findProcesses: () => [
+      { command: "launchd", pid: 1 },
+      { command: "node", pid: process.pid },
+      { command: "node", pid: 4242 },
+    ],
+    killProcess: (pid) => {
+      signaledPids.push(pid);
+    },
+  }));
+
+  assert.deepEqual(signaledPids, [4242]);
+  assert.match(output, /pid 1 \(launchd\) \(protected, will not be signaled\)/);
+  assert.match(output, new RegExp(`pid ${process.pid} \\(node\\) \\(protected, will not be signaled\\)`));
+});
+
+test("ports kill reports per-process failures without throwing", async () => {
+  const output = await captureLog(() => runPortsKill(["--port", "4000", "--yes"], {
+    findProcesses: () => [{ command: "node", pid: 4242 }],
+    killProcess: () => {
+      throw new Error("no such process");
+    },
+  }));
+
+  assert.match(output, /Signaled 0 of 1 process\(es\) with SIGTERM\./);
+  assert.match(output, /Failed: 4242 \(no such process\)/);
+});
+
+test("ports kill requires --port", async () => {
+  await assert.rejects(runPortsKill([]), /--port is required/);
+});
+
+function hasLsof(): boolean {
+  if (process.platform === "win32") {
+    return false;
+  }
+  try {
+    execFileSync("which", ["lsof"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.listen(0, () => {
+      const address = server.address();
+      if (address && typeof address === "object") {
+        const { port } = address;
+        server.close(() => resolve(port));
+      } else {
+        server.close(() => reject(new Error("failed to allocate a port")));
+      }
+    });
+  });
+}
+
+async function waitForPortListener(port: number, attempts = 30): Promise<void> {
+  for (let i = 0; i < attempts; i += 1) {
+    const output = runCli(["ports", "list", "--port", String(port)]);
+    if (!output.includes("No process is listening")) {
+      return;
+    }
+    await sleep(100);
+  }
+  throw new Error(`Timed out waiting for a listener on port ${port}`);
+}
+
+test("ports list and kill find and stop a real listening process", { skip: !hasLsof() }, async () => {
+  const port = await findFreePort();
+  const child = spawn(process.execPath, [
+    "-e",
+    `require("node:http").createServer((_req, res) => res.end("ok")).listen(${port})`,
+  ], { stdio: "ignore" });
+
+  try {
+    await waitForPortListener(port);
+
+    const listOutput = runCli(["ports", "list", "--port", String(port)]);
+    assert.match(listOutput, new RegExp(`pid ${child.pid} \\(node\\)`));
+
+    const declineOutput = runCli(["ports", "kill", "--port", String(port)], "n\n");
+    assert.match(declineOutput, /Port kill cancelled; nothing was changed\./);
+
+    const killOutput = runCli(["ports", "kill", "--port", String(port)], "y\n");
+    assert.match(killOutput, /Signaled 1 of 1 process\(es\) with SIGTERM\./);
+
+    await sleep(300);
+    const finalOutput = runCli(["ports", "list", "--port", String(port)]);
+    assert.match(finalOutput, /No process is listening/);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+    }
+  }
 });

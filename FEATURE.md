@@ -24,15 +24,17 @@ framework or keep `develop-utils` as a runtime dependency.
 - `pg init` provisions an isolated database and role inside an existing
   PostgreSQL container.
 - `git-branches` lists, cleans up, and syncs outdated local git branches.
+- `ports` finds and stops the process listening on a given TCP port.
 
 ## Safety Convention
 
-Commands that can mutate or delete state (`pg init`, `git-branches clean`)
-follow the same shape: build a plan, print it under `--dry-run` without
-touching anything, confirm interactively before mutating, and support
-`--yes` to skip the prompt. The single most destructive option per command
-(overwriting an existing `DATABASE_URL`, deleting a not-fully-merged branch)
-additionally requires `--force`.
+Commands that can mutate or delete state (`pg init`, `git-branches clean`,
+`ports kill`) follow the same shape: build a plan, print it under `--dry-run`
+without touching anything, confirm interactively before mutating, and
+support `--yes` to skip the prompt. The single most destructive option per
+command additionally requires `--force`: overwriting an existing
+`DATABASE_URL`, deleting a not-fully-merged branch, or sending `SIGKILL`
+instead of `SIGTERM`.
 
 ## Language Support
 

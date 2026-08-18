@@ -4,6 +4,7 @@ import { help as licensesHelp, runAddLicenses } from "../commands/add-licenses/c
 import { help as semanticReleaseHelp, runAddSemanticRelease } from "../commands/add-semantic-release/command.js";
 import { gitBranchesHelp, runGitBranches } from "../commands/git-branches/command.js";
 import { pgHelp, runPg } from "../commands/pg/command.js";
+import { portsHelp, runPorts } from "../commands/ports/command.js";
 import { closePrompts } from "../shared/prompts.js";
 
 function mainHelp(): string {
@@ -14,6 +15,7 @@ Commands:
   add-semantic-release  Add semantic-release setup to a repository.
   pg                    Local PostgreSQL setup helpers.
   git-branches          List, clean up, and sync outdated local git branches.
+  ports                 Find and stop the process listening on a TCP port.
 
 Run "devu <command> --help" for command-specific options.
 
@@ -48,6 +50,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "ports") {
+    await runPorts(args);
+    return;
+  }
+
   if (command === "help:add-licenses") {
     console.log(licensesHelp());
     return;
@@ -65,6 +72,11 @@ async function main(): Promise<void> {
 
   if (command === "help:git-branches") {
     console.log(gitBranchesHelp());
+    return;
+  }
+
+  if (command === "help:ports") {
+    console.log(portsHelp());
     return;
   }
 

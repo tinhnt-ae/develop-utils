@@ -9,14 +9,16 @@ Use it to:
 - generate license, copyright, authorship, and line-ending policy files;
 - add semantic-release configuration and CI workflows;
 - provision a project-specific database and role in an existing PostgreSQL
-  Docker container; and
-- list, clean up, and sync outdated local git branches.
+  Docker container;
+- list, clean up, and sync outdated local git branches; and
+- find and stop the process listening on a TCP port.
 
 ## Requirements
 
 - Node.js 22 or newer
 - Git for repository metadata and release setup
 - Docker only when using `devu pg init`
+- `lsof` (macOS/Linux) or `netstat` (Windows) only when using `devu ports`
 
 ## Recommended installation
 
@@ -40,6 +42,7 @@ devu add-licenses --dry-run
 devu add-semantic-release --dry-run
 devu pg init --container existing-postgres --dry-run
 devu git-branches list
+devu ports list --port 3000
 ```
 
 To update a global installation later:
@@ -200,6 +203,33 @@ any local branches itself.
 See the [git branch cleanup design](docs/git-branches-plan.md) for the full
 staleness rules and safety rationale.
 
+### `devu ports`
+
+Finds and stops the process(es) listening on a TCP port. Never signals pid 1
+or the CLI's own process.
+
+```bash
+devu ports list --port 3000
+devu ports kill --port 3000 [--dry-run] [--yes] [--force]
+```
+
+Preview before stopping anything:
+
+```bash
+devu ports kill --port 3000 --dry-run
+```
+
+Then stop the process after reviewing the plan; the command asks for
+confirmation unless `--yes` is passed. `kill` sends `SIGTERM` by default;
+pass `--force` to send `SIGKILL` instead:
+
+```bash
+devu ports kill --port 3000
+```
+
+On macOS and Linux this shells out to `lsof`; on Windows it uses `netstat`
+(and cannot resolve a process name, only its pid).
+
 ## Help and command aliases
 
 Use built-in help for the current list of options:
@@ -212,6 +242,8 @@ devu pg init --help
 devu git-branches list --help
 devu git-branches sync --help
 devu git-branches clean --help
+devu ports list --help
+devu ports kill --help
 ```
 
 `develop-utils` remains available as a long-form alias. The package also ships
