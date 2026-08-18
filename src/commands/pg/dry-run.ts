@@ -1,30 +1,16 @@
+import { printPlannedActions as printPlan, type PlannedAction as SharedPlannedAction } from "../../shared/plan.js";
+
 export type PlannedActionGroup = "Docker" | "PostgreSQL" | "Files";
 
-export interface PlannedAction {
+export interface PlannedAction extends SharedPlannedAction {
   group: PlannedActionGroup;
-  description: string;
 }
 
+const GROUP_ORDER: PlannedActionGroup[] = ["Docker", "PostgreSQL", "Files"];
+
 export function printPlannedActions(actions: PlannedAction[]): void {
-  const groups: PlannedActionGroup[] = ["Docker", "PostgreSQL", "Files"];
-
-  console.log("DRY RUN PostgreSQL local provisioning plan:");
-
-  for (const group of groups) {
-    const groupActions = actions.filter((action) => action.group === group);
-
-    if (groupActions.length === 0) {
-      continue;
-    }
-
-    console.log("");
-    console.log(`${group}:`);
-    for (const action of groupActions) {
-      console.log(`  - ${action.description}`);
-    }
-  }
-
-  console.log("");
-  console.log("No Docker commands, SQL statements, or files were changed.");
-  console.log("Rerun without --dry-run to approve and apply this plan.");
+  printPlan("DRY RUN PostgreSQL local provisioning plan:", actions, GROUP_ORDER, [
+    "No Docker commands, SQL statements, or files were changed.",
+    "Rerun without --dry-run to approve and apply this plan.",
+  ]);
 }
