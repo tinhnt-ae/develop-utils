@@ -799,3 +799,158 @@ test("runCommand supports inherited stdio commands", () => {
 
   assert.equal(output, "");
 });
+
+async function branchRepo(prefix = "develop-utils-branches-"): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), prefix));
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test Owner"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "owner@example.com"], { cwd: dir });
+  await writeFile(path.join(dir, "README.md"), "# Test\n");
+  execFileSync("git", ["add", "README.md"], { cwd: dir });
+  execFileSync("git", ["commit", "-m", "initial"], {
+    cwd: dir,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+      GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
+    },
+    stdio: "ignore",
+  });
+  return dir;
+}
+
+function git(dir: string, args: string[]): string {
+  return execFileSync("git", args, { cwd: dir, encoding: "utf8" }).trim();
+}
+
+function commitDated(dir: string, message: string, isoDate: string): void {
+  execFileSync("git", ["commit", "--allow-empty", "-q", "-m", message], {
+    cwd: dir,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_DATE: isoDate,
+      GIT_COMMITTER_DATE: isoDate,
+    },
+    stdio: "ignore",
+  });
+}
+
+test("git-branches list flags merged old branches as stale and leaves recent work alone", async () => {
+  const dir = await branchRepo();
+  git(dir, ["checkout", "-q", "-b", "old-merged"]);
+  commitDated(dir, "merged change", "2020-01-02T00:00:00Z");
+  git(dir, ["checkout", "-q", "main"]);
+  git(dir, ["merge", "-q", "--no-ff", "old-merged", "-m", "merge old-merged"]);
+  git(dir, ["checkout", "-q", "-b", "recent-work"]);
+  commitDated(dir, "recent work", new Date().toISOString());
+  git(dir, ["checkout", "-q", "main"]);
+
+  const output = runCli(["git-branches", "list", dir]);
+
+  assert.match(output, /old-merged\t.*STALE/);
+  assert.doesNotMatch(output, /recent-work\t.*STALE/);
+  assert.match(output, /main\t.*\(current, default, merged\)/);
+});
+
+test("git-branches clean --dry-run prints the plan without deleting branches", async () => {
+  const dir = await branchRepo();
+  git(dir, ["checkout", "-q", "-b", "old-merged"]);
+  commitDated(dir, "merged change", "2020-01-02T00:00:00Z");
+  git(dir, ["checkout", "-q", "main"]);
+  git(dir, ["merge", "-q", "--no-ff", "old-merged", "-m", "merge old-merged"]);
+
+  const output = runCli(["git-branches", "clean", dir, "--dry-run"]);
+
+  assert.match(output, /DRY RUN git branch cleanup plan:/);
+  assert.match(output, /Delete "old-merged"/);
+  assert.match(output, /No branches were deleted\./);
+  assert.match(git(dir, ["branch", "--list", "old-merged"]), /old-merged/);
+});
+
+test("git-branches clean deletes merged stale branches with --yes", async () => {
+  const dir = await branchRepo();
+  git(dir, ["checkout", "-q", "-b", "old-merged"]);
+  commitDated(dir, "merged change", "2020-01-02T00:00:00Z");
+  git(dir, ["checkout", "-q", "main"]);
+  git(dir, ["merge", "-q", "--no-ff", "old-merged", "-m", "merge old-merged"]);
+
+  const output = runCli(["git-branches", "clean", dir, "--yes"]);
+
+  assert.match(output, /Deleted: old-merged/);
+  assert.equal(git(dir, ["branch", "--list", "old-merged"]), "");
+});
+
+test("git-branches clean skips a stale unmerged branch without --force and deletes it with --force", async () => {
+  const dir = await branchRepo();
+  const bare = await mkdtemp(path.join(tmpdir(), "develop-utils-branches-bare-"));
+  execFileSync("git", ["init", "-q", "--bare"], { cwd: bare });
+  git(dir, ["remote", "add", "origin", bare]);
+  git(dir, ["push", "-q", "origin", "main"]);
+  git(dir, ["checkout", "-q", "-b", "feature-gone"]);
+  commitDated(dir, "feature work", "2020-01-03T00:00:00Z");
+  git(dir, ["push", "-q", "-u", "origin", "feature-gone"]);
+  git(dir, ["checkout", "-q", "main"]);
+  git(dir, ["push", "-q", "origin", "--delete", "feature-gone"]);
+  git(dir, ["fetch", "-q", "--prune", "origin"]);
+
+  const skippedOutput = runCli(["git-branches", "clean", dir, "--yes"]);
+
+  assert.match(skippedOutput, /Skipped \(not fully merged; rerun with --force to delete\): feature-gone/);
+  assert.match(git(dir, ["branch", "--list", "feature-gone"]), /feature-gone/);
+
+  const forcedOutput = runCli(["git-branches", "clean", dir, "--yes", "--force"]);
+
+  assert.match(forcedOutput, /Deleted: feature-gone/);
+  assert.equal(git(dir, ["branch", "--list", "feature-gone"]), "");
+});
+
+test("git-branches clean protects the current branch, default branch, and --protect names", async () => {
+  const dir = await branchRepo();
+  git(dir, ["checkout", "-q", "-b", "old-merged"]);
+  commitDated(dir, "merged change", "2020-01-02T00:00:00Z");
+  git(dir, ["checkout", "-q", "main"]);
+  git(dir, ["merge", "-q", "--no-ff", "old-merged", "-m", "merge old-merged"]);
+
+  const output = runCli(["git-branches", "clean", dir, "--yes", "--protect", "old-merged"]);
+
+  assert.match(output, /No stale local branches found\./);
+  assert.match(git(dir, ["branch", "--list", "old-merged"]), /old-merged/);
+});
+
+test("git-branches sync fetches and prunes deleted remote-tracking branches", async () => {
+  const dir = await branchRepo();
+  const bare = await mkdtemp(path.join(tmpdir(), "develop-utils-branches-bare-"));
+  execFileSync("git", ["init", "-q", "--bare"], { cwd: bare });
+  git(dir, ["remote", "add", "origin", bare]);
+  git(dir, ["push", "-q", "origin", "main"]);
+  git(dir, ["checkout", "-q", "-b", "feature-gone"]);
+  commitDated(dir, "feature work", "2020-01-03T00:00:00Z");
+  git(dir, ["push", "-q", "-u", "origin", "feature-gone"]);
+  git(dir, ["checkout", "-q", "main"]);
+
+  // Delete the branch directly in the bare remote (instead of `git push
+  // --delete` from `dir`) so dir's local remote-tracking ref is not
+  // auto-pruned as a side effect of the delete push itself.
+  execFileSync("git", ["branch", "-D", "feature-gone"], { cwd: bare });
+
+  assert.match(git(dir, ["branch", "-r"]), /origin\/feature-gone/);
+
+  const output = runCli(["git-branches", "sync", dir]);
+
+  assert.match(output, /Sync complete\./);
+  assert.doesNotMatch(git(dir, ["branch", "-r"]), /origin\/feature-gone/);
+});
+
+test("git-branches sync --dry-run does not fetch", async () => {
+  const dir = await branchRepo();
+
+  const output = runCli(["git-branches", "sync", dir, "--dry-run"]);
+
+  assert.match(output, /DRY RUN: git fetch --prune origin/);
+});
+
+test("git-branches list rejects a directory that is not a git repository", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "develop-utils-branches-nongit-"));
+
+  assert.throws(() => runCli(["git-branches", "list", dir]), /is not a git repository/);
+});

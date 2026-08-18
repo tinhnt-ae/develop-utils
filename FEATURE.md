@@ -21,6 +21,18 @@ framework or keep `develop-utils` as a runtime dependency.
   files from git metadata and optional environment overrides.
 - `add-semantic-release` creates semantic-release config and provider-specific
   CI workflow files.
+- `pg init` provisions an isolated database and role inside an existing
+  PostgreSQL container.
+- `git-branches` lists, cleans up, and syncs outdated local git branches.
+
+## Safety Convention
+
+Commands that can mutate or delete state (`pg init`, `git-branches clean`)
+follow the same shape: build a plan, print it under `--dry-run` without
+touching anything, confirm interactively before mutating, and support
+`--yes` to skip the prompt. The single most destructive option per command
+(overwriting an existing `DATABASE_URL`, deleting a not-fully-merged branch)
+additionally requires `--force`.
 
 ## Language Support
 

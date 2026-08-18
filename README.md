@@ -7,9 +7,10 @@ command is `devu`.
 Use it to:
 
 - generate license, copyright, authorship, and line-ending policy files;
-- add semantic-release configuration and CI workflows; and
+- add semantic-release configuration and CI workflows;
 - provision a project-specific database and role in an existing PostgreSQL
-  Docker container.
+  Docker container; and
+- list, clean up, and sync outdated local git branches.
 
 ## Requirements
 
@@ -38,6 +39,7 @@ You can now run any command directly:
 devu add-licenses --dry-run
 devu add-semantic-release --dry-run
 devu pg init --container existing-postgres --dry-run
+devu git-branches list
 ```
 
 To update a global installation later:
@@ -163,6 +165,41 @@ file options:
 devu pg init --help
 ```
 
+### `devu git-branches`
+
+Lists, cleans up, and syncs local git branches that are outdated. A branch is
+flagged stale when it is merged into the default branch, or its upstream has
+been deleted, and its last commit is older than the threshold. The current
+branch and the default branch are always protected.
+
+```bash
+devu git-branches list [project-dir] [--older-than-days 90] [--protect name]
+devu git-branches sync [project-dir] [--dry-run]
+devu git-branches clean [project-dir] [--older-than-days 90] [--protect name] [--dry-run] [--yes] [--force]
+```
+
+Preview the changes first:
+
+```bash
+devu git-branches clean --dry-run
+```
+
+Then delete after reviewing the plan; the command asks for confirmation
+unless `--yes` is passed:
+
+```bash
+devu git-branches clean
+```
+
+Cleanly-merged branches are deleted with `git branch -d`. Branches whose
+upstream was deleted but that are not fully merged are only deleted with
+`--force` (`git branch -D`). `devu git-branches sync` runs `git fetch --prune`
+to update which branches show as having a deleted upstream, without deleting
+any local branches itself.
+
+See the [git branch cleanup design](docs/git-branches-plan.md) for the full
+staleness rules and safety rationale.
+
 ## Help and command aliases
 
 Use built-in help for the current list of options:
@@ -172,6 +209,9 @@ devu --help
 devu add-licenses --help
 devu add-semantic-release --help
 devu pg init --help
+devu git-branches list --help
+devu git-branches sync --help
+devu git-branches clean --help
 ```
 
 `develop-utils` remains available as a long-form alias. The package also ships
@@ -183,6 +223,7 @@ is the recommended interface.
 - [Semantic release setup](docs/semantic-release.md)
 - [npm publishing checklist](docs/npm-publishing.md)
 - [PostgreSQL provisioning plan](docs/postgres-provisioning-plan.md)
+- [Git branch cleanup design](docs/git-branches-plan.md)
 - [Feature rationale and language support](FEATURE.md)
 
 ## Development

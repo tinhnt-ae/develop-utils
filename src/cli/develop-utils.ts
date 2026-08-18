@@ -2,6 +2,7 @@
 
 import { help as licensesHelp, runAddLicenses } from "../commands/add-licenses/command.js";
 import { help as semanticReleaseHelp, runAddSemanticRelease } from "../commands/add-semantic-release/command.js";
+import { gitBranchesHelp, runGitBranches } from "../commands/git-branches/command.js";
 import { pgHelp, runPg } from "../commands/pg/command.js";
 import { closePrompts } from "../shared/prompts.js";
 
@@ -12,6 +13,7 @@ Commands:
   add-licenses          Create license/authorship files from git metadata.
   add-semantic-release  Add semantic-release setup to a repository.
   pg                    Local PostgreSQL setup helpers.
+  git-branches          List, clean up, and sync outdated local git branches.
 
 Run "devu <command> --help" for command-specific options.
 
@@ -41,6 +43,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "git-branches") {
+    await runGitBranches(args);
+    return;
+  }
+
   if (command === "help:add-licenses") {
     console.log(licensesHelp());
     return;
@@ -53,6 +60,11 @@ async function main(): Promise<void> {
 
   if (command === "help:pg") {
     console.log(pgHelp());
+    return;
+  }
+
+  if (command === "help:git-branches") {
+    console.log(gitBranchesHelp());
     return;
   }
 
