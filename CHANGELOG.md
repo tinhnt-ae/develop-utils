@@ -1,3 +1,10 @@
+## [1.2.2](https://github.com/tinhnt-ae/develop-utils/compare/v1.2.1...v1.2.2) (2026-08-18)
+
+
+### Bug Fixes
+
+* pgsql flow create DB and role ([d451ff2](https://github.com/tinhnt-ae/develop-utils/commit/d451ff2372edc99951e885af8a08dfd294f120e4))
+
 ## [1.2.1](https://github.com/tinhnt-ae/develop-utils/compare/v1.2.0...v1.2.1) (2026-07-25)
 
 
