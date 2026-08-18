@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmod, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { runAddLicenses } from "../dist/commands/add-licenses/command.js";
 import { runAddSemanticRelease } from "../dist/commands/add-semantic-release/command.js";
+import { assertReleaseWorkflowGate, bitbucketWorkflow, githubWorkflow, gitlabWorkflow } from "../dist/commands/add-semantic-release/workflows.js";
 import { buildDatabaseName, buildUserName, normalizeProjectName } from "../dist/commands/pg/naming.js";
+import { runPgInit } from "../dist/commands/pg/init.js";
 import { runCommand } from "../dist/shared/process.js";
 
 async function tempRepo(prefix = "develop-utils-"): Promise<string> {
@@ -89,15 +91,27 @@ if [ "$1" = "exec" ] && [ "$3" = "pg_isready" ]; then
   echo "accepting connections"
   exit 0
 fi
-if [ "$1" = "exec" ] && [ "$3" = "psql" ]; then
+if [ "$1" = "exec" ] && [ "$2" = "-i" ] && [ "$4" = "psql" ]; then
   sql=$(cat)
   printf 'SQL %s\\n' "$sql" >> "$FAKE_DOCKER_LOG"
+  if [ "$FAKE_DOCKER_FAIL_INSPECTION" = "1" ] && printf '%s' "$sql" | grep -q "FROM pg_database"; then
+    echo "inspection failed" >&2
+    exit 1
+  fi
+  if [ "$FAKE_DOCKER_FAIL_MUTATION" = "1" ] && printf '%s' "$sql" | grep -q "CREATE ROLE"; then
+    printf 'failed SQL: %s\\n' "$sql" >&2
+    exit 1
+  fi
   case "$sql" in
     *"FROM pg_roles"*)
-      if [ "$FAKE_DOCKER_EXISTING" = "1" ]; then echo "\${FAKE_DOCKER_ROLE_STATE:-1|0|0|0}"; fi
+      if { [ "$FAKE_DOCKER_EXISTING" = "1" ] && [ "$FAKE_DOCKER_ROLE_EXISTS" != "0" ]; } || [ -f "$FAKE_DOCKER_LOG.role" ]; then echo "\${FAKE_DOCKER_ROLE_STATE:-1|0|0|0}"; fi
       ;;
     *"FROM pg_database"*)
-      if [ "$FAKE_DOCKER_EXISTING" = "1" ]; then echo "$FAKE_DOCKER_DB_OWNER"; fi
+      if [ -f "$FAKE_DOCKER_LOG.database" ]; then cat "$FAKE_DOCKER_LOG.database"; elif [ "$FAKE_DOCKER_EXISTING" = "1" ]; then echo "$FAKE_DOCKER_DB_OWNER"; fi
+      ;;
+    *"CREATE ROLE"*|*"ALTER ROLE"*) touch "$FAKE_DOCKER_LOG.role" ;;
+    *"CREATE DATABASE"*)
+      printf '%s\\n' "$sql" | sed -n 's/.* OWNER "\\([^"]*\\)".*/\\1/p' > "$FAKE_DOCKER_LOG.database"
       ;;
   esac
   exit 0
@@ -215,6 +229,9 @@ test("add-semantic-release dry-run detects pnpm local-node mode and does not wri
   );
   assert.match(output, /DRY RUN command: pnpm add -D semantic-release/);
   assert.doesNotMatch(output, /DRY RUN command: .*@semantic-release\/npm/);
+  assert.match(output, /npm run build/);
+  assert.match(output, /npm test/);
+  assert.match(output, /npm run pack:dry-run/);
 });
 
 test("add-semantic-release auto mode uses ci-npx for non-Node repositories", async () => {
@@ -252,7 +269,9 @@ test("add-semantic-release auto mode uses ci-npx for non-Node repositories", asy
   assert.doesNotMatch(workflow, /@semantic-release\/npm/);
   assert.doesNotMatch(workflow, /id-token: write/);
   assert.doesNotMatch(workflow, /Publish this package to npm/);
-  assert.doesNotMatch(workflow, /npm ci|pnpm install|yarn install/);
+  assert.match(workflow, /validation:/);
+  assert.match(workflow, /needs: validation/);
+  assert.match(workflow, /npm ci/);
 });
 
 test("add-semantic-release adds npm publishing when Node repo approves it", async () => {
@@ -294,6 +313,43 @@ test("add-semantic-release adds npm publishing when Node repo approves it", asyn
   assert.doesNotMatch(workflow, /registry-url/);
   assert.match(workflow, /--package @semantic-release\/npm@latest/);
   assert.doesNotMatch(workflow, /NPM_TOKEN/);
+  assert.match(workflow, /needs: validation/);
+});
+
+test("release workflow gate rejects unsafe GitHub variants", () => {
+  const workflow = githubWorkflow("main", "github", "local-node", "npm", true);
+  assert.doesNotThrow(() => assertReleaseWorkflowGate(workflow, "github"));
+
+  const unsafeVariants = [
+    workflow.replace("  validation:\n", "  checks:\n"),
+    workflow.replace("      - run: npm run build\n", ""),
+    workflow.replace("      - run: npm test\n", ""),
+    workflow.replace("      - run: npm run pack:dry-run\n", ""),
+    workflow.replace("    needs: validation\n", ""),
+    workflow.replace("      - run: npm test\n", "      - run: npm test\n      - run: npx semantic-release\n"),
+    workflow.replace("    needs: validation\n", "    needs: validation\n    if: always()\n"),
+  ];
+
+  for (const unsafe of unsafeVariants) {
+    assert.throws(() => assertReleaseWorkflowGate(unsafe, "github"));
+  }
+});
+
+test("committed GitHub workflow matches the canonical gated generator", async () => {
+  const committed = await readFile(path.resolve(import.meta.dirname, "../.github/workflows/release.yml"), "utf8");
+  const generated = githubWorkflow("main", "github", "local-node", "npm", true);
+  assert.equal(committed, generated);
+  assert.doesNotThrow(() => assertReleaseWorkflowGate(committed, "github"));
+});
+
+test("generated GitLab and Bitbucket release pipelines validate before release", () => {
+  const gitlab = gitlabWorkflow("main", "gitlab", "local-node", "npm", false);
+  const bitbucket = bitbucketWorkflow("main", "bitbucket", "local-node", "npm", false);
+
+  assert.doesNotThrow(() => assertReleaseWorkflowGate(gitlab, "gitlab"));
+  assert.doesNotThrow(() => assertReleaseWorkflowGate(bitbucket, "bitbucket"));
+  assert.match(gitlab, /stages:\n  - validate\n  - release/);
+  assert.match(bitbucket, /name: Validate[\s\S]*npm run pack:dry-run[\s\S]*name: Release[\s\S]*semantic-release/);
 });
 
 test("add-semantic-release warns when npm package name already points to another repository", async () => {
@@ -432,8 +488,12 @@ test("pg help shows available commands", () => {
 test("pg init dry-run prints planned PostgreSQL provisioning actions", async () => {
   const dir = await tempRepo("develop-utils-pg-init-");
   const envPath = path.join(dir, ".env.local");
+  const fakeDocker = await fakeDockerBin();
 
-  const output = runCli(["pg", "init", dir, "--dry-run", "--project", "Story Audio", "--container", "local-postgres"]);
+  const output = runCli(["pg", "init", dir, "--dry-run", "--project", "Story Audio", "--container", "local-postgres"], "", {
+    PATH: fakeDocker.path,
+    FAKE_DOCKER_LOG: fakeDocker.logPath,
+  });
 
   assert.match(output, /Project directory:/);
   assert.match(output, /Project name: story_audio/);
@@ -441,7 +501,9 @@ test("pg init dry-run prints planned PostgreSQL provisioning actions", async () 
   assert.match(output, /Database user: story_audio_user/);
   assert.match(output, /Container: local-postgres/);
   assert.match(output, /Docker:/);
-  assert.match(output, /Inspect running PostgreSQL-compatible containers/);
+  assert.match(output, /Inspect/);
+  assert.match(output, /validate/);
+  assert.match(output, /PostgreSQL-compatible container/);
   assert.match(output, /PostgreSQL:/);
   assert.match(output, /Provision database "story_audio_dev"/);
   assert.match(output, /Grant "story_audio_user" ownership\/privileges/);
@@ -453,10 +515,12 @@ test("pg init dry-run prints planned PostgreSQL provisioning actions", async () 
     readFile(envPath, "utf8"),
     /ENOENT/,
   );
+  await assert.rejects(readFile(fakeDocker.logPath, "utf8"), /ENOENT/);
 });
 
 test("pg init can be cancelled before Docker or PostgreSQL changes", async () => {
   const dir = await tempRepo("develop-utils-pg-init-required-");
+  const fakeDocker = await fakeDockerBin();
   const result = spawnSync(process.execPath, [
     "dist/cli/develop-utils.js",
     "pg",
@@ -465,11 +529,43 @@ test("pg init can be cancelled before Docker or PostgreSQL changes", async () =>
   ], {
     cwd: path.resolve(import.meta.dirname, ".."),
     encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: fakeDocker.path,
+      FAKE_DOCKER_LOG: fakeDocker.logPath,
+    },
     input: "n\n",
   });
 
   assert.equal(result.status, 0);
   assert.match(result.stdout, /PostgreSQL provisioning cancelled; nothing was changed/);
+  const dockerLog = await readFile(fakeDocker.logPath, "utf8");
+  assert.match(dockerLog, /FROM pg_roles/);
+  assert.match(dockerLog, /FROM pg_database/);
+  assert.doesNotMatch(dockerLog, /CREATE ROLE|ALTER ROLE|CREATE DATABASE|ALTER DATABASE|GRANT|REVOKE|ALTER SCHEMA|CREATE SCHEMA/);
+});
+
+test("pg init dry-run does not inspect Docker, generate a password, or write files", async () => {
+  const dir = await tempRepo("develop-utils-pg-dry-run-isolation-");
+  const fakeDocker = await fakeDockerBin();
+  const originalPath = process.env.PATH;
+  const originalFakeDockerLog = process.env.FAKE_DOCKER_LOG;
+  process.env.PATH = fakeDocker.path;
+  process.env.FAKE_DOCKER_LOG = fakeDocker.logPath;
+  try {
+    await runPgInit([dir, "--container", "audit-postgres", "--dry-run"], {
+      generatePassword: () => {
+        throw new Error("password generation must not run during dry-run");
+      },
+    });
+  } finally {
+    process.env.PATH = originalPath;
+    if (originalFakeDockerLog === undefined) delete process.env.FAKE_DOCKER_LOG;
+    else process.env.FAKE_DOCKER_LOG = originalFakeDockerLog;
+  }
+
+  await assert.rejects(readFile(fakeDocker.logPath, "utf8"), /ENOENT/);
+  await assert.rejects(readFile(path.join(dir, ".env.local"), "utf8"), /ENOENT/);
 });
 
 test("pg init provisions an isolated database in an existing container and writes DATABASE_URL", async () => {
@@ -480,7 +576,7 @@ test("pg init provisions an isolated database in an existing container and write
     "pg", "init", dir,
     "--container", "shared-postgres",
     "--project", "Story Audio",
-    "--password", "safe password",
+    "--password", "ProvidedSecret-DoNotPrint-123",
     "--yes",
   ], "", {
     PATH: fakeDocker.path,
@@ -488,12 +584,16 @@ test("pg init provisions an isolated database in an existing container and write
   });
 
   const env = await readFile(path.join(dir, ".env.local"), "utf8");
+  const envMode = (await stat(path.join(dir, ".env.local"))).mode & 0o777;
   const dockerLog = await readFile(fakeDocker.logPath, "utf8");
   assert.match(output, /Role: created/);
   assert.match(output, /Database: created/);
-  assert.equal(env, "DATABASE_URL=postgresql://story_audio_user:safe%20password@shared-postgres:5432/story_audio_dev\n");
+  assert.equal(env, "DATABASE_URL=postgresql://story_audio_user:ProvidedSecret-DoNotPrint-123@shared-postgres:5432/story_audio_dev\n");
+  assert.equal(envMode, 0o600);
+  assert.doesNotMatch(output, /ProvidedSecret-DoNotPrint-123/);
+  assert.match(output, /postgresql:\/\/story_audio_user:\*\*\*@shared-postgres:5432\/story_audio_dev/);
   assert.match(dockerLog, /inspect --format .*State.Status.* shared-postgres/);
-  assert.match(dockerLog, /CREATE ROLE "story_audio_user" LOGIN PASSWORD 'safe password'/);
+  assert.match(dockerLog, /CREATE ROLE "story_audio_user" LOGIN PASSWORD 'ProvidedSecret-DoNotPrint-123'/);
   assert.match(dockerLog, /CREATE DATABASE "story_audio_dev" OWNER "story_audio_user"/);
   assert.doesNotMatch(dockerLog, /docker run| run -d /);
 });
@@ -568,7 +668,113 @@ test("pg init refuses to take over a database owned by another role", async () =
   assert.equal(result.status, 1);
   assert.match(result.stderr, /owned by "another_user".*refusing to change its ownership or grants/);
   const dockerLog = await readFile(fakeDocker.logPath, "utf8");
-  assert.doesNotMatch(dockerLog, /GRANT ALL|ALTER SCHEMA/);
+  assert.doesNotMatch(dockerLog, /CREATE ROLE|ALTER ROLE|CREATE DATABASE|ALTER DATABASE|GRANT|REVOKE|ALTER SCHEMA|CREATE SCHEMA/);
+});
+
+test("pg init does not create a missing role when an existing database has another owner", async () => {
+  const dir = await tempRepo("develop-utils-pg-owner-missing-role-");
+  const fakeDocker = await fakeDockerBin();
+  const result = spawnSync(process.execPath, [
+    "dist/cli/develop-utils.js", "pg", "init", dir,
+    "--container", "shared-postgres", "--project", "isolated-app",
+    "--password", "ProvidedSecret-DoNotPrint-123", "--yes",
+  ], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: fakeDocker.path,
+      FAKE_DOCKER_LOG: fakeDocker.logPath,
+      FAKE_DOCKER_EXISTING: "1",
+      FAKE_DOCKER_ROLE_EXISTS: "0",
+      FAKE_DOCKER_DB_OWNER: "another_user",
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /owned by "another_user"/);
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /ProvidedSecret-DoNotPrint-123/);
+  const dockerLog = await readFile(fakeDocker.logPath, "utf8");
+  assert.doesNotMatch(dockerLog, /CREATE ROLE|ALTER ROLE|CREATE DATABASE|ALTER DATABASE|GRANT|REVOKE|ALTER SCHEMA|CREATE SCHEMA/);
+});
+
+test("pg init performs zero mutation when database inspection fails", async () => {
+  const dir = await tempRepo("develop-utils-pg-inspection-failure-");
+  const fakeDocker = await fakeDockerBin();
+  const result = spawnSync(process.execPath, [
+    "dist/cli/develop-utils.js", "pg", "init", dir,
+    "--container", "shared-postgres", "--password", "ProvidedSecret-DoNotPrint-123", "--yes",
+  ], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: fakeDocker.path,
+      FAKE_DOCKER_LOG: fakeDocker.logPath,
+      FAKE_DOCKER_FAIL_INSPECTION: "1",
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /PostgreSQL inspection failed/);
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /ProvidedSecret-DoNotPrint-123/);
+  const dockerLog = await readFile(fakeDocker.logPath, "utf8");
+  assert.doesNotMatch(dockerLog, /CREATE ROLE|ALTER ROLE|CREATE DATABASE|ALTER DATABASE|GRANT|REVOKE|ALTER SCHEMA|CREATE SCHEMA/);
+});
+
+test("pg init suppresses credential-bearing child diagnostics on mutation failure", async () => {
+  const dir = await tempRepo("develop-utils-pg-mutation-failure-");
+  const fakeDocker = await fakeDockerBin();
+  const result = spawnSync(process.execPath, [
+    "dist/cli/develop-utils.js", "pg", "init", dir,
+    "--container", "shared-postgres", "--password", "ProvidedSecret-DoNotPrint-123", "--yes",
+  ], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: fakeDocker.path,
+      FAKE_DOCKER_LOG: fakeDocker.logPath,
+      FAKE_DOCKER_FAIL_MUTATION: "1",
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /PostgreSQL mutation failed/);
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /ProvidedSecret-DoNotPrint-123/);
+});
+
+test("pg init redacts an internally generated password from output", async () => {
+  const dir = await tempRepo("develop-utils-pg-generated-secret-");
+  const fakeDocker = await fakeDockerBin();
+  const stdout: string[] = [];
+  const originalLog = console.log;
+  const originalPath = process.env.PATH;
+  const originalFakeDockerLog = process.env.FAKE_DOCKER_LOG;
+  process.env.PATH = fakeDocker.path;
+  process.env.FAKE_DOCKER_LOG = fakeDocker.logPath;
+  console.log = (...values: unknown[]) => stdout.push(values.join(" "));
+  try {
+    await runPgInit([
+      dir, "--container", "shared-postgres", "--project", "generated-app", "--yes",
+    ], {
+      generatePassword: () => "GeneratedSecret-DoNotPrint-456",
+    });
+  } finally {
+    console.log = originalLog;
+    process.env.PATH = originalPath;
+    if (originalFakeDockerLog === undefined) {
+      delete process.env.FAKE_DOCKER_LOG;
+    } else {
+      process.env.FAKE_DOCKER_LOG = originalFakeDockerLog;
+    }
+  }
+
+  const output = stdout.join("\n");
+  const env = await readFile(path.join(dir, ".env.local"), "utf8");
+  assert.equal(env, "DATABASE_URL=postgresql://generated_app_user:GeneratedSecret-DoNotPrint-456@shared-postgres:5432/generated_app_dev\n");
+  assert.doesNotMatch(output, /GeneratedSecret-DoNotPrint-456/);
+  assert.match(output, /postgresql:\/\/generated_app_user:\*\*\*@shared-postgres:5432\/generated_app_dev/);
 });
 
 test("PostgreSQL naming utilities build safe default identifiers", () => {
