@@ -10,8 +10,9 @@ Use it to:
 - add semantic-release configuration and CI workflows;
 - provision a project-specific database and role in an existing PostgreSQL
   Docker container;
-- list, clean up, and sync outdated local git branches; and
-- find and stop the process listening on a TCP port.
+- list, clean up, and sync outdated local git branches;
+- find and stop the process listening on a TCP port; and
+- list and delete stale `node_modules` directories to reclaim disk space.
 
 ## Requirements
 
@@ -43,6 +44,7 @@ devu add-semantic-release --dry-run
 devu pg init --container existing-postgres --dry-run
 devu git-branches list
 devu ports list --port 3000
+devu node-cleanup list --root ~/projects
 ```
 
 To update a global installation later:
@@ -230,6 +232,34 @@ devu ports kill --port 3000
 On macOS and Linux this shells out to `lsof`; on Windows it uses `netstat`
 (and cannot resolve a process name, only its pid).
 
+### `devu node-cleanup`
+
+Lists and deletes `node_modules` directories under a root directory that
+look abandoned: the `node_modules` directory itself, its sibling
+`package.json`, and (for a git project) its last commit are all older than
+the threshold.
+
+```bash
+devu node-cleanup list --root ~/projects [--older-than-days 30]
+devu node-cleanup clean --root ~/projects [--older-than-days 30] [--dry-run] [--yes]
+```
+
+Preview before deleting anything:
+
+```bash
+devu node-cleanup clean --root ~/projects --dry-run
+```
+
+Then delete after reviewing the plan and the total reclaimable size; the
+command asks for confirmation unless `--yes` is passed:
+
+```bash
+devu node-cleanup clean --root ~/projects
+```
+
+`--root` is required (no implicit whole-disk scan), and the command refuses
+to scan the filesystem root or your home directory directly.
+
 ## Help and command aliases
 
 Use built-in help for the current list of options:
@@ -244,6 +274,8 @@ devu git-branches sync --help
 devu git-branches clean --help
 devu ports list --help
 devu ports kill --help
+devu node-cleanup list --help
+devu node-cleanup clean --help
 ```
 
 `develop-utils` remains available as a long-form alias. The package also ships

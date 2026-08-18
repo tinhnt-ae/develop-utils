@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmod, mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -1116,4 +1116,65 @@ test("ports list and kill find and stop a real listening process", { skip: !hasL
       child.kill("SIGKILL");
     }
   }
+});
+
+async function nodeProjectFixture(
+  root: string,
+  name: string,
+  mtimeIso: string,
+): Promise<{ nodeModulesPath: string; projectDir: string }> {
+  const projectDir = path.join(root, name);
+  const nodeModulesPath = path.join(projectDir, "node_modules");
+  await mkdir(path.join(nodeModulesPath, "some-pkg"), { recursive: true });
+  await writeFile(path.join(projectDir, "package.json"), "{}\n");
+  await writeFile(path.join(nodeModulesPath, "some-pkg", "index.js"), "module.exports = {};\n");
+
+  const mtime = new Date(mtimeIso);
+  await utimes(path.join(projectDir, "package.json"), mtime, mtime);
+  await utimes(nodeModulesPath, mtime, mtime);
+
+  return { nodeModulesPath, projectDir };
+}
+
+test("node-cleanup list flags a stale node_modules directory and leaves a fresh one alone", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "develop-utils-node-cleanup-"));
+  await nodeProjectFixture(root, "stale-project", "2000-01-01T00:00:00Z");
+  await nodeProjectFixture(root, "fresh-project", new Date().toISOString());
+
+  const output = runCli(["node-cleanup", "list", "--root", root, "--older-than-days", "30"]);
+
+  assert.match(output, /stale-project\t.*\(STALE\)/);
+  assert.doesNotMatch(output, /fresh-project\t.*\(STALE\)/);
+});
+
+test("node-cleanup clean --dry-run prints the plan without deleting directories", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "develop-utils-node-cleanup-"));
+  const { nodeModulesPath } = await nodeProjectFixture(root, "stale-project", "2000-01-01T00:00:00Z");
+
+  const output = runCli(["node-cleanup", "clean", "--root", root, "--older-than-days", "30", "--dry-run"]);
+
+  assert.match(output, /DRY RUN node_modules cleanup plan:/);
+  assert.match(output, /No directories were deleted\./);
+  await assert.doesNotReject(stat(nodeModulesPath));
+});
+
+test("node-cleanup clean --yes deletes stale node_modules but leaves fresh ones", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "develop-utils-node-cleanup-"));
+  const stale = await nodeProjectFixture(root, "stale-project", "2000-01-01T00:00:00Z");
+  const fresh = await nodeProjectFixture(root, "fresh-project", new Date().toISOString());
+
+  const output = runCli(["node-cleanup", "clean", "--root", root, "--older-than-days", "30", "--yes"]);
+
+  assert.match(output, /Deleted 1 node_modules directory, reclaiming/);
+  await assert.rejects(stat(stale.nodeModulesPath), /ENOENT/);
+  await assert.doesNotReject(stat(fresh.nodeModulesPath));
+});
+
+test("node-cleanup clean refuses to scan the filesystem root or the home directory", async () => {
+  assert.throws(() => runCli(["node-cleanup", "clean", "--root", "/", "--yes"]), /Refusing to scan filesystem root/);
+  assert.throws(() => runCli(["node-cleanup", "clean", "--root", homedir(), "--yes"]), /Refusing to scan home directory/);
+});
+
+test("node-cleanup list requires --root", async () => {
+  assert.throws(() => runCli(["node-cleanup", "list"]), /--root is required/);
 });

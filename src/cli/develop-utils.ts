@@ -3,6 +3,7 @@
 import { help as licensesHelp, runAddLicenses } from "../commands/add-licenses/command.js";
 import { help as semanticReleaseHelp, runAddSemanticRelease } from "../commands/add-semantic-release/command.js";
 import { gitBranchesHelp, runGitBranches } from "../commands/git-branches/command.js";
+import { nodeCleanupHelp, runNodeCleanup } from "../commands/node-cleanup/command.js";
 import { pgHelp, runPg } from "../commands/pg/command.js";
 import { portsHelp, runPorts } from "../commands/ports/command.js";
 import { closePrompts } from "../shared/prompts.js";
@@ -16,6 +17,7 @@ Commands:
   pg                    Local PostgreSQL setup helpers.
   git-branches          List, clean up, and sync outdated local git branches.
   ports                 Find and stop the process listening on a TCP port.
+  node-cleanup          List and delete stale node_modules directories.
 
 Run "devu <command> --help" for command-specific options.
 
@@ -55,6 +57,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "node-cleanup") {
+    await runNodeCleanup(args);
+    return;
+  }
+
   if (command === "help:add-licenses") {
     console.log(licensesHelp());
     return;
@@ -77,6 +84,11 @@ async function main(): Promise<void> {
 
   if (command === "help:ports") {
     console.log(portsHelp());
+    return;
+  }
+
+  if (command === "help:node-cleanup") {
+    console.log(nodeCleanupHelp());
     return;
   }
 

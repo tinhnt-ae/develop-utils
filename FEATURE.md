@@ -25,16 +25,18 @@ framework or keep `develop-utils` as a runtime dependency.
   PostgreSQL container.
 - `git-branches` lists, cleans up, and syncs outdated local git branches.
 - `ports` finds and stops the process listening on a given TCP port.
+- `node-cleanup` lists and deletes stale `node_modules` directories to
+  reclaim disk space.
 
 ## Safety Convention
 
 Commands that can mutate or delete state (`pg init`, `git-branches clean`,
-`ports kill`) follow the same shape: build a plan, print it under `--dry-run`
-without touching anything, confirm interactively before mutating, and
-support `--yes` to skip the prompt. The single most destructive option per
-command additionally requires `--force`: overwriting an existing
-`DATABASE_URL`, deleting a not-fully-merged branch, or sending `SIGKILL`
-instead of `SIGTERM`.
+`ports kill`, `node-cleanup clean`) follow the same shape: build a plan,
+print it under `--dry-run` without touching anything, confirm interactively
+before mutating, and support `--yes` to skip the prompt. The single most
+destructive option per command additionally requires `--force`: overwriting
+an existing `DATABASE_URL`, deleting a not-fully-merged branch, or sending
+`SIGKILL` instead of `SIGTERM`.
 
 ## Language Support
 
